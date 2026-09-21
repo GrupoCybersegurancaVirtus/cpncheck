@@ -15,6 +15,7 @@ instead of it.
 import time
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
+from .counterexample import Counterexample
 from .result import PropertyResult
 
 __all__ = ["terminal_marking", "projection", "check_conformance"]
@@ -99,11 +100,15 @@ def check_conformance(net, inputs: Sequence[Any], reference: Callable,
     bad = [(x, g, e) for x, g, e in zip(inputs, got, expected) if g != e]
     if bad:
         x, g, e = bad[0]
-        return PropertyResult(
-            pid, False,
-            f"{len(bad)}/{len(got)} input(s) disagree, first: "
-            f"input={_short(x)} net={g} expected={e}",
-            time.perf_counter() - t0, spec=spec)
+        cex = Counterexample(
+            "conformance",
+            note=(f"{len(bad)}/{len(got)} input(s) disagree, first: "
+                  f"input={_short(x)} net={g} expected={e}"),
+            input=x,
+            data={"net": g, "expected": e, "disagreements": len(bad),
+                  "input_places": tuple(input_places)})
+        return PropertyResult(pid, False, str(cex),
+                              time.perf_counter() - t0, spec=spec, cex=cex)
     return PropertyResult(pid, True, f"{len(got)}/{len(got)} inputs agree",
                           time.perf_counter() - t0, spec=spec)
 

@@ -24,7 +24,8 @@ against the label of the instance that failed.
 import collections
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence
 
-from .ctl import _af, _eu, _eu_witness
+from .counterexample import Counterexample, Step
+from .ctl import _af, _af_lasso, _eu, _eu_path
 
 __all__ = [
     "Context",
@@ -45,7 +46,26 @@ __all__ = [
     "EF",
     "EU",
     "ForEach",
+    "steps_of",
 ]
+
+
+# Function to turn state-space arcs into counterexample steps.
+def steps_of(ctx, arcs):
+    """Describe a list of occurrence-graph arcs as counterexample steps.
+
+    Args:
+        ctx (Context): The evaluation context.
+        arcs (sequence): ``(transition index, binding key, node)`` triples.
+
+    Returns:
+        list: :class:`~cpncheck.counterexample.Step` objects.
+    """
+    out = []
+    for ti, key, node in arcs:
+        t = ctx.net.transitions[ti]
+        out.append(Step(ti, t["name"], t["page"], dict(key), node))
+    return out
 
 
 # Class holding everything a formula is evaluated against.
@@ -207,7 +227,24 @@ class Formula:
         """
         return self.describe(ctx) + " does not hold"
 
-    # Method to produce the counterexample for a failure at the initial marking.
+    # Method to produce the evidence for a failure at the initial marking.
+    def counterexample(self, ctx: Context) -> Counterexample:
+        """Evidence that the formula fails at the initial marking.
+
+        Every operator knows what a counterexample to *it* looks like: a
+        safety property hands back the sequence to a violating marking, a
+        liveness property a run that never gets there. The default is a bare
+        statement, for a formula with nothing to exhibit.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            Counterexample: The evidence.
+        """
+        return Counterexample("witness", note=self.at_fail(ctx, 0))
+
+    # Method to produce the counterexample for a failure, as text.
     def explain(self, ctx: Context) -> str:
         """Counterexample for a formula that fails at the initial marking.
 
@@ -215,9 +252,9 @@ class Formula:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            str: The counterexample, rendered.
         """
-        return self.at_fail(ctx, 0)
+        return str(self.counterexample(ctx))
 
     # Method to attach custom phrasing to a formula.
     def phrased(self, note: str) -> "Formula":
@@ -712,29 +749,34 @@ class Not(Formula):
         """
         return ctx.all - ctx.sat(self.operand)
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
-        """Explain a negation that fails, i.e. an operand that holds.
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
+        """Evidence for a negation that fails, i.e. an operand that holds.
 
         ``NOT E[hold U target]`` is the shape of the precedence properties, and
-        its counterexample is the occurrence sequence witnessing the ``EU``.
+        the evidence against it is the occurrence sequence witnessing the
+        ``EU``.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
         inner = self.operand
         if isinstance(inner, EU):
             return inner.witness(ctx)
         if isinstance(inner, EF):
-            bad = ctx.sat(inner.operand)
+            bad = sorted(ctx.sat(inner.operand))
             if bad:
-                v = min(bad)
-                return (f"{inner.operand.at_fail(ctx, v)} after: "
-                        f"{ctx.ss.trace(v)}")
-        return f"{inner.describe(ctx)} holds at the initial marking"
+                v = bad[0]
+                return Counterexample(
+                    "finite", note=inner.operand.at_fail(ctx, v),
+                    prefix=steps_of(ctx, ctx.ss.path(v)),
+                    final=ctx.ss.markings[v])
+        return Counterexample(
+            "witness",
+            note=f"{inner.describe(ctx)} holds at the initial marking")
 
     # Method to render the formula.
     def __str__(self):
@@ -792,20 +834,21 @@ class And(Formula):
                 return operand.at_fail(ctx, node)
         return self.describe(ctx) + " does not hold"
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
-        """Explain the first conjunct that fails at the initial marking.
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
+        """Evidence from the first conjunct that fails at the initial marking.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
         for operand in self.operands:
             if 0 not in ctx.sat(operand):
-                return operand.explain(ctx)
-        return self.describe(ctx) + " does not hold"
+                return operand.counterexample(ctx)
+        return Counterexample("witness",
+                              note=self.describe(ctx) + " does not hold")
 
     # Method to render the formula.
     def __str__(self):
@@ -924,23 +967,27 @@ class AG(Formula):
             return ctx.all
         return ctx.all - frozenset(_eu(ctx.ss, set(ctx.all), set(bad)))
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
         """The shortest occurrence sequence to a marking violating ``phi``.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
         bad = sorted(ctx.all - ctx.sat(self.operand))
         if not bad:
-            return self.describe(ctx) + " does not hold"
+            return Counterexample("witness",
+                                  note=self.describe(ctx) + " does not hold")
         v = bad[0]
         many = f"{len(bad)} marking(s), e.g. " if len(bad) > 1 else ""
-        return (f"{many}{self.operand.at_fail(ctx, v)} after: "
-                f"{ctx.ss.trace(v)}")
+        return Counterexample(
+            "finite", note=f"{many}{self.operand.at_fail(ctx, v)}",
+            prefix=steps_of(ctx, ctx.ss.path(v)),
+            final=ctx.ss.markings[v],
+            data={"violating_markings": len(bad)})
 
     # Method to render the formula.
     def __str__(self):
@@ -988,23 +1035,39 @@ class AF(Formula):
         target = set(ctx.sat(self.operand))
         return frozenset(_af(ctx.ss, target, self.semantics or ctx.semantics))
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
         """A maximal occurrence sequence that never reaches ``phi``.
+
+        Two shapes: a run that stops before ``phi`` -- a path to a dead marking
+        outside it -- or a run that goes on forever without reaching it, which
+        needs the repeating part to be exhibited at all.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
         target = set(ctx.sat(self.operand))
-        witness = _eu_witness(ctx.ss, set(ctx.all) - target,
-                              set(ctx.dead) - target)
         what = self.operand.describe(ctx)
-        if witness is not None:
-            return f"{what} never happens on: {witness}"
-        return f"a reachable cycle avoids {what}"
+        stops = _eu_path(ctx.ss, set(ctx.all) - target, set(ctx.dead) - target)
+        if stops is not None:
+            end = stops[-1][2] if stops else 0
+            return Counterexample(
+                "finite", note=f"{what} never happens", via="on:",
+                prefix=steps_of(ctx, stops), final=ctx.ss.markings[end],
+                data={"ends_in": "a dead marking"})
+        lasso = _af_lasso(ctx.ss, target)
+        if lasso is not None:
+            prefix, cycle = lasso
+            entry = prefix[-1][2] if prefix else 0
+            return Counterexample(
+                "lasso", note=f"{what} never happens", via="on:",
+                prefix=steps_of(ctx, prefix), cycle=steps_of(ctx, cycle),
+                final=ctx.ss.markings[entry],
+                data={"cycle_length": len(cycle)})
+        return Counterexample("witness", note=f"a reachable cycle avoids {what}")
 
     # Method to render the formula.
     def __str__(self):
@@ -1056,17 +1119,24 @@ class EF(Formula):
         """
         return f"{self.operand.describe(ctx)} is unreachable"
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
         """Report that no reachable marking satisfies the operand.
+
+        There is no sequence to show: the evidence is the exhausted state
+        space itself.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
-        return f"no reachable marking satisfies {self.operand.describe(ctx)}"
+        return Counterexample(
+            "witness",
+            note=f"no reachable marking satisfies "
+                 f"{self.operand.describe(ctx)}",
+            data={"markings_searched": len(ctx.all)})
 
     # Method to render the formula.
     def __str__(self):
@@ -1110,33 +1180,47 @@ class EU(Formula):
                              set(ctx.sat(self.target))))
 
     # Method to produce the occurrence sequence witnessing the until.
-    def witness(self, ctx) -> str:
+    def witness(self, ctx) -> Counterexample:
         """The shortest occurrence sequence along ``hold`` into ``target``.
+
+        This is evidence *for* the until, which is what a counterexample to
+        its negation is -- and negated untils are how precedence properties
+        are written.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The occurrence sequence, or a note that there is none.
+            Counterexample: The sequence, or a bare statement when there is
+            none.
         """
-        path = _eu_witness(ctx.ss, set(ctx.sat(self.hold)),
-                           set(ctx.sat(self.target)))
+        path = _eu_path(ctx.ss, set(ctx.sat(self.hold)),
+                        set(ctx.sat(self.target)))
         what = self.note or (f"{self.target.describe(ctx)} while "
                              f"{self.hold.describe(ctx)}")
-        return f"{what}: {path}" if path else f"{what} (no occurrence sequence)"
+        if path is None:
+            return Counterexample("witness",
+                                  note=f"{what} (no occurrence sequence)")
+        end = path[-1][2] if path else 0
+        return Counterexample("finite", note=what, via="on:",
+                              prefix=steps_of(ctx, path),
+                              final=ctx.ss.markings[end])
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
         """Report that no such occurrence sequence exists.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence.
         """
-        return (f"no occurrence sequence reaches "
-                f"{self.target.describe(ctx)} along {self.hold.describe(ctx)}")
+        return Counterexample(
+            "witness",
+            note=f"no occurrence sequence reaches "
+                 f"{self.target.describe(ctx)} along "
+                 f"{self.hold.describe(ctx)}")
 
     # Method to render the formula.
     def __str__(self):
@@ -1227,20 +1311,24 @@ class ForEach(Formula):
                 return f"{label}: {formula.at_fail(ctx, node)}"
         return self.describe(ctx) + " does not hold"
 
-    # Method to produce the counterexample for a failure.
-    def explain(self, ctx):
-        """Explain the first instance that fails at the initial marking.
+    # Method to produce the evidence for a failure.
+    def counterexample(self, ctx):
+        """Evidence from the first instance that fails, blamed on its member.
 
         Args:
             ctx (Context): The evaluation context.
 
         Returns:
-            str: The counterexample.
+            Counterexample: The evidence, with the member's label in the note.
         """
         for label, formula in self.instances(ctx):
             if 0 not in ctx.sat(formula):
-                return f"{label}: {formula.explain(ctx)}"
-        return self.describe(ctx) + " does not hold"
+                cex = formula.counterexample(ctx)
+                cex.note = f"{label}: {cex.note}"
+                cex.data["group_member"] = label
+                return cex
+        return Counterexample("witness",
+                              note=self.describe(ctx) + " does not hold")
 
     # Method to render the formula.
     def __str__(self):

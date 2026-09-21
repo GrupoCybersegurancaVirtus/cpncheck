@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import profiles as _profiles          # noqa: F401  (registers built-ins)
 from .coloured import ColouredNet, UnsupportedNet
+from .counterexample import Counterexample
 from .ctl import _af, _eu, _eu_witness
 from .askctl import MLProgram
 from .formula import Context
@@ -186,15 +187,20 @@ class CPNModelChecker:
     # ------------------------------------------------------------------
 
     # Method to evaluate every formula on one occurrence graph.
-    def _evaluate(self, ss: StateSpace) -> Tuple[Dict[str, PropertyResult],
-                                                 Dict[str, str]]:
+    def _evaluate(self, ss: StateSpace, sample=None
+                  ) -> Tuple[Dict[str, PropertyResult], Dict[str, str]]:
         """Evaluate the profile's formulas and the expected oracle values.
 
         Every formula is asked at the initial marking; a formula that fails is
-        asked to explain itself, which is what the ``detail`` of a verdict is.
+        asked for a counterexample, which is attached to the verdict and also
+        rendered into its ``detail``. The input the graph was built from is
+        recorded on the counterexample, since a property is checked per input
+        and which one failed is part of the evidence.
 
         Args:
             ss (StateSpace): A complete occurrence graph.
+            sample (optional): The input written into the initial marking, or
+                None when the file's own marking was used.
 
         Returns:
             tuple: ``({id: PropertyResult}, {oracle key: value})``.
@@ -210,10 +216,14 @@ class CPNModelChecker:
         for pid, formula in self.formulas.items():
             t0 = time.perf_counter()
             holds = 0 in ctx.sat(formula)
-            detail = "" if holds else formula.explain(ctx)
-            res[pid] = PropertyResult(pid, holds, detail,
+            cex = None
+            if not holds:
+                cex = formula.counterexample(ctx)
+                cex.input = sample
+                cex.data["input_places"] = self.input_places
+            res[pid] = PropertyResult(pid, holds, "" if holds else str(cex),
                                       time.perf_counter() - t0,
-                                      spec=self.catalog.get(pid))
+                                      spec=self.catalog.get(pid), cex=cex)
             oracle[pid] = "true" if holds else "false"
 
         # The same formulas under ASK-CTL's reading of AF, which is vacuously
@@ -228,22 +238,54 @@ class CPNModelChecker:
 
         for pid, kind in self.scc_props.items():
             t0 = time.perf_counter()
+            cex = None
             if kind == "home":
                 if ss.home:
                     holds, detail = True, (f"{len(ss.home)} home marking(s), "
                                            f"{len(ss.terminal_sccs)} terminal SCC")
                 else:
-                    holds, detail = False, (
-                        f"{len(ss.terminal_sccs)} terminal SCCs: no marking is "
-                        "reachable from all others")
+                    holds = False
+                    cex = self._no_home_marking(ss, sample)
+                    detail = str(cex)
             else:                                  # pragma: no cover - guard
                 holds, detail = None, f"unknown SCC property kind {kind!r}"
             res[pid] = PropertyResult(pid, holds, detail,
                                       time.perf_counter() - t0,
-                                      spec=self.catalog.get(pid))
+                                      spec=self.catalog.get(pid), cex=cex)
             if holds is not None:
                 oracle[pid] = "true" if holds else "false"
         return res, oracle
+
+    # Method to show why no marking is reachable from every other.
+    def _no_home_marking(self, ss: StateSpace, sample=None) -> Counterexample:
+        """Evidence that the occurrence graph has several terminal components.
+
+        A home marking exists exactly when the graph has one terminal
+        component. When it has more, the evidence is two of them: once the net
+        has entered either, the other can no longer be reached, so no marking
+        is reachable from both.
+
+        Args:
+            ss (StateSpace): The occurrence graph.
+            sample (optional): The input the graph was built from.
+
+        Returns:
+            Counterexample: The evidence.
+        """
+        first = {}
+        for node in range(ss.n_nodes):
+            first.setdefault(ss.scc[node], node)
+        reps = [first[c] for c in ss.terminal_sccs[:2]]
+        traces = [ss.trace(v) for v in reps]
+        note = (f"{len(ss.terminal_sccs)} terminal SCCs: no marking is "
+                "reachable from all others")
+        if len(traces) == 2:
+            note += (f"; after {traces[0]} and after {traces[1]} the runs can "
+                     "no longer meet")
+        return Counterexample(
+            "witness", note=note, input=sample,
+            data={"terminal_components": len(ss.terminal_sccs),
+                  "representatives": traces})
 
     # ------------------------------------------------------------------
     # Public API
@@ -295,7 +337,7 @@ class CPNModelChecker:
                 stats = stats or {"nodes": ss.n_nodes, "arcs": ss.n_arcs,
                                   "complete": False}
                 continue
-            part, orc = self._evaluate(ss)
+            part, orc = self._evaluate(ss, x)
             if not stats:
                 stats = {"nodes": ss.n_nodes, "arcs": ss.n_arcs,
                          "scc_nodes": ss.n_sccs, "scc_arcs": ss.n_scc_arcs,
@@ -333,15 +375,16 @@ class CPNModelChecker:
             old = target.get(pid)
             if old is None:
                 target[pid] = PropertyResult(pid, r.holds, r.detail,
-                                             r.elapsed, spec=r._spec)
+                                             r.elapsed, spec=r._spec,
+                                             cex=r.cex)
                 continue
             old.elapsed += r.elapsed
             if old.holds is False:
                 continue
             if r.holds is False:
-                old.holds, old.detail = False, r.detail
+                old.holds, old.detail, old.cex = False, r.detail, r.cex
             elif old.holds is None:
-                old.holds, old.detail = r.holds, r.detail
+                old.holds, old.detail, old.cex = r.holds, r.detail, r.cex
 
     # ------------------------------------------------------------------
     # CPN Tools

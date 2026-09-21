@@ -34,11 +34,53 @@ result = check_cpn("model.cpn", class_labels=[0, 1, 2])
 print(result.report())
 assert result.passed
 for r in result.failures:
-    print(r.id, r.detail)        # the counterexample
+    print(r.id, r.detail)        # the counterexample, rendered
 ```
 
 `ModelCheckResult` exposes `passed`, `failures`, `skipped`, `properties`,
 `stats`, `oracle`, `report()`, `to_dict()`, `latex_rows()` and `latex_table()`.
+
+## Counterexamples
+
+A violated property hands back evidence, not a sentence. `r.cex` is a
+`Counterexample`: the occurrence sequence, the binding of every step, the
+marking it ends in, and the input the net was given.
+
+```python
+cex = result.properties["A3"].cex
+cex.kind                      # finite | lasso | witness | structural | conformance
+cex.sequence(bindings=True)   # Distribute<x = (2, 7)> -> Init<...> -> ...
+cex.input                     # the input this violation needs
+cex.replay(checker.cnet)      # True: it really does what it says
+cex.to_dict()                 # the whole trace, for a report or a test
+```
+
+`cpncheck check model.cpn --trace` prints all of it.
+
+Three things worth knowing:
+
+**A liveness property can fail with no finite witness at all.** If the net can
+run forever without ever reaching the goal, the evidence has to include the
+repeating part. That is the `lasso` shape: a prefix, then a cycle the net can
+take indefinitely — `... -> Feed_1 then forever [Rule2]`.
+
+**`replay()` is a certificate.** It re-fires the sequence using the net's
+firing rule, not the search that produced it, and checks it ends where the
+counterexample claims (and, for a lasso, returns to where the cycle began). A
+bug in the fixpoints cannot forge a trace that replays. The test suite requires
+every sequence from every mutant to replay, and requires a tampered one not to.
+
+**A structural finding comes with an input.** Guard disjointness holds or fails
+for *every* input, so a failure names no particular run — but the intersection
+of the two guards is a box, and a point in it is an input on which the overlap
+really happens. Feed it back and the per-input check fails too, on the same
+pair:
+
+```python
+witness = result.properties["B4"].cex.input
+again = check_cpn("model.cpn", samples=[witness], class_labels=[0, 1, 2])
+assert again.properties["B1"].holds is False     # now it is reachable
+```
 
 ## What it does
 

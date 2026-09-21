@@ -35,8 +35,10 @@ class StateSpace:
         markings (list): Marking of each node; node 0 is the initial marking.
         succ (list): Per node, ``(transition index, binding key, target)``.
         pred (list): Per node, ``(transition index, source)``.
-        parent (list): BFS tree parent ``(source, transition index)`` per node,
-            used to print counterexample traces.
+        parent (list): BFS tree parent ``(source, transition index, binding
+            key)`` per node, which is what a counterexample trace is built
+            from -- the binding is kept because a trace without it cannot be
+            re-fired.
         dead (list): Nodes without successors.
         complete (bool): False when exploration stopped at the node budget.
         scc (list): SCC index of every node.
@@ -173,9 +175,28 @@ class StateSpace:
         """
         return self.markings[node][pidx]
 
+    # Method to list the shortest occurrence sequence reaching a node.
+    def path(self, node: int) -> List[Tuple[int, tuple, int]]:
+        """Shortest occurrence sequence from the initial marking to a node.
+
+        Args:
+            node (int): Target node.
+
+        Returns:
+            list: ``(transition index, binding key, node reached)`` per step,
+            in order; empty when the node is the initial marking.
+        """
+        steps: List[Tuple[int, tuple, int]] = []
+        while node != 0 and self.parent[node] is not None:
+            src, ti, key = self.parent[node]
+            steps.append((ti, key, node))
+            node = src
+        steps.reverse()
+        return steps
+
     # Method to print the shortest firing sequence reaching a node.
     def trace(self, node: int, limit: int = 12) -> str:
-        """Shortest occurrence sequence from the initial marking to a node.
+        """Shortest occurrence sequence to a node, as text.
 
         Args:
             node (int): Target node.
@@ -184,12 +205,8 @@ class StateSpace:
         Returns:
             str: ``t1 -> t2 -> ...``.
         """
-        steps = []
-        while node != 0 and self.parent[node] is not None:
-            src, ti = self.parent[node]
-            steps.append(self.net.transitions[ti]["name"])
-            node = src
-        steps.reverse()
+        steps = [self.net.transitions[ti]["name"]
+                 for ti, _key, _dst in self.path(node)]
         if not steps:
             return "(initial marking)"
         if len(steps) > limit:
@@ -217,7 +234,7 @@ def build_state_space(net: ColouredNet, max_nodes: int = DEFAULT_MAX_NODES,
     nodes = {start: 0}
     markings = [start]
     succ: List[List[Tuple[int, Tuple, int]]] = [[]]
-    parent: List[Optional[Tuple[int, int]]] = [None]
+    parent: List[Optional[Tuple[int, int, tuple]]] = [None]
     queue = collections.deque([0])
     complete = True
     while queue:
@@ -234,7 +251,7 @@ def build_state_space(net: ColouredNet, max_nodes: int = DEFAULT_MAX_NODES,
                 nodes[nxt] = dst
                 markings.append(nxt)
                 succ.append([])
-                parent.append((src, ti))
+                parent.append((src, ti, key))
                 queue.append(dst)
             succ[src].append((ti, key, dst))
     return StateSpace(net, markings, succ, complete,

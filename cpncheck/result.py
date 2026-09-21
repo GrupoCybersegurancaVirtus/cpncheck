@@ -23,14 +23,17 @@ class PropertyResult:
     Attributes:
         id (str): Property identifier.
         holds (bool|None): ``True``/``False``, or ``None`` when not evaluated.
-        detail (str): Counterexample, witness or reason for skipping.
+        detail (str): Counterexample, witness or reason for skipping, as
+            text; the same thing as :attr:`cex` when there is one.
         elapsed (float): Seconds spent evaluating the property.
+        cex (Counterexample): The evidence, when the property was violated and
+            the technique produces evidence.
     """
 
-    __slots__ = ("id", "holds", "detail", "elapsed", "_spec")
+    __slots__ = ("id", "holds", "detail", "elapsed", "_spec", "cex")
 
     # Method to build a property verdict.
-    def __init__(self, id, holds, detail="", elapsed=0.0, spec=None):
+    def __init__(self, id, holds, detail="", elapsed=0.0, spec=None, cex=None):
         """Create a verdict.
 
         Args:
@@ -40,12 +43,14 @@ class PropertyResult:
             elapsed (float): Evaluation time in seconds.
             spec (Property, optional): The descriptor, when it does not come
                 from the built-in catalog -- a profile may define its own.
+            cex (Counterexample, optional): The evidence for a violation.
         """
         self.id = id
         self.holds = holds
         self.detail = detail
         self.elapsed = elapsed
         self._spec = spec
+        self.cex = cex
 
     # Property returning the catalog entry behind this verdict.
     @property
@@ -181,7 +186,9 @@ class ModelCheckResult:
                 pid: {"name": r.spec.name, "formula": r.spec.ctl,
                       "method": r.spec.method, "kind": r.spec.kind,
                       "holds": r.holds, "status": r.status, "detail": r.detail,
-                      "elapsed": r.elapsed}
+                      "elapsed": r.elapsed,
+                      "counterexample": (r.cex.to_dict() if r.cex is not None
+                                         else None)}
                 for pid, r in self.properties.items()
             },
         }

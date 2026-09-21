@@ -25,6 +25,8 @@ __all__ = [
     "Interval",
     "guard_box",
     "boxes_intersect",
+    "intersection",
+    "representative",
     "overlapping_guards",
 ]
 
@@ -158,6 +160,72 @@ def boxes_intersect(a: Dict[Any, Interval], b: Dict[Any, Interval]) -> bool:
     return True
 
 
+# Function to intersect two boxes.
+def intersection(a: Dict[Any, Interval], b: Dict[Any, Interval]
+                 ) -> Optional[Dict[Any, Interval]]:
+    """The box of the points both boxes contain.
+
+    Args:
+        a (dict): First box.
+        b (dict): Second box.
+
+    Returns:
+        dict|None: The intersection, or None when they are disjoint.
+    """
+    out: Dict[Any, Interval] = {}
+    for key in set(a) | set(b):
+        ia, ib = a.get(key, WHOLE), b.get(key, WHOLE)
+        if ia.low > ib.low:
+            low, low_open = ia.low, ia.low_open
+        elif ib.low > ia.low:
+            low, low_open = ib.low, ib.low_open
+        else:
+            low, low_open = ia.low, ia.low_open or ib.low_open
+        if ia.high < ib.high:
+            high, high_open = ia.high, ia.high_open
+        elif ib.high < ia.high:
+            high, high_open = ib.high, ib.high_open
+        else:
+            high, high_open = ia.high, ia.high_open or ib.high_open
+        if low > high or (low == high and (low_open or high_open)):
+            return None
+        out[key] = Interval(low, low_open, high, high_open)
+    return out
+
+
+# Function to pick one point inside a box.
+def representative(box: Dict[Any, Interval]) -> Dict[Any, float]:
+    """A point satisfying every interval of a box.
+
+    This is what turns a structural finding into something executable: the
+    guards were shown to overlap, and this is an input where they do, which
+    can be given back to the state-space check.
+
+    Args:
+        box (dict): The box, assumed non-empty.
+
+    Returns:
+        dict: One value per constrained field; unconstrained fields are
+        omitted, since any value does for them.
+    """
+    point: Dict[Any, float] = {}
+    for key, (low, low_open, high, high_open) in box.items():
+        if low == float("-inf") and high == float("inf"):
+            value = 0.0
+        elif low == float("-inf"):
+            value = high if not high_open else high - 1.0
+        elif high == float("inf"):
+            value = low if not low_open else low + 1.0
+        elif low == high:
+            value = low
+        else:
+            value = (low + high) / 2.0
+            if value <= low or value >= high:      # the interval is a hair wide
+                value = low if not low_open else high
+        point[key] = value
+    return point
+
+
 # Function to find transitions of the same group whose guards can hold together.
 def overlapping_guards(net, groups, ignore=None
                        ) -> Tuple[List[Tuple[str, str, str]], int]:
@@ -175,10 +243,11 @@ def overlapping_guards(net, groups, ignore=None
 
     Returns:
         tuple: ``(findings, unparsed)``, where a finding is
-        ``(label, name, name)``.
+        ``(label, name, name, point)`` and ``point`` is an assignment where
+        both guards hold.
     """
     trans = net.transitions
-    findings: List[Tuple[str, str, str]] = []
+    findings: List[Tuple[str, str, str, dict]] = []
     unparsed = 0
     for label, indices in groups.items():
         boxes: List[Tuple[str, Dict[Any, Interval]]] = []
@@ -192,6 +261,8 @@ def overlapping_guards(net, groups, ignore=None
             boxes.append((name, box))
         for i in range(len(boxes)):
             for j in range(i + 1, len(boxes)):
-                if boxes_intersect(boxes[i][1], boxes[j][1]):
-                    findings.append((label, boxes[i][0], boxes[j][0]))
+                shared = intersection(boxes[i][1], boxes[j][1])
+                if shared is not None:
+                    findings.append((label, boxes[i][0], boxes[j][0],
+                                     representative(shared)))
     return findings, unparsed

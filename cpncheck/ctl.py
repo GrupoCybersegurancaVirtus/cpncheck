@@ -95,8 +95,42 @@ def _af(ss: StateSpace, target: set, semantics: str = "textbook") -> set:
 
 
 # Function to find a path witnessing E[hold U target] from the initial node.
-def _eu_witness(ss: StateSpace, hold: set, target: set) -> Optional[str]:
+def _eu_path(ss, hold: set, target: set):
     """Shortest occurrence sequence through ``hold`` nodes into ``target``.
+
+    Args:
+        ss (StateSpace): The graph.
+        hold (set): Nodes the path may pass through.
+        target (set): Goal nodes.
+
+    Returns:
+        list|None: ``(transition index, binding key, node)`` per step, or None
+        when no such path leaves the initial marking.
+    """
+    back = {0: None}
+    queue = collections.deque([0])
+    while queue:
+        v = queue.popleft()
+        if v in target:
+            steps = []
+            while back[v] is not None:
+                src, ti, key = back[v]
+                steps.append((ti, key, v))
+                v = src
+            steps.reverse()
+            return steps
+        if v not in hold:
+            continue
+        for ti, key, w in ss.succ[v]:
+            if w not in back:
+                back[w] = (v, ti, key)
+                queue.append(w)
+    return None
+
+
+# Function to find a path witnessing E[hold U target] as readable text.
+def _eu_witness(ss, hold: set, target: set) -> Optional[str]:
+    """The occurrence sequence of :func:`_eu_path`, as text.
 
     Args:
         ss (StateSpace): The graph.
@@ -106,23 +140,71 @@ def _eu_witness(ss: StateSpace, hold: set, target: set) -> Optional[str]:
     Returns:
         str|None: The transition sequence, or None if there is no witness.
     """
-    parent = {0: None}
-    queue = collections.deque([0])
-    while queue:
-        v = queue.popleft()
-        if v in target:
-            steps = []
-            while parent[v] is not None:
-                v, name = parent[v]
-                steps.append(name)
-            steps.reverse()
-            if len(steps) > 12:
-                steps = steps[:3] + [f"... {len(steps) - 6} more ..."] + steps[-3:]
-            return " -> ".join(steps) if steps else "(initial marking)"
-        if v not in hold:
-            continue
-        for ti, _key, w in ss.succ[v]:
-            if w not in parent:
-                parent[w] = (v, ss.net.transitions[ti]["name"])
-                queue.append(w)
+    steps = _eu_path(ss, hold, target)
+    if steps is None:
+        return None
+    names = [ss.net.transitions[ti]["name"] for ti, _key, _dst in steps]
+    if not names:
+        return "(initial marking)"
+    if len(names) > 12:
+        names = names[:3] + [f"... {len(names) - 6} more ..."] + names[-3:]
+    return " -> ".join(names)
+
+
+# Function to find a run that avoids the target forever.
+def _af_lasso(ss, target: set):
+    """A prefix into a cycle on which the target is never reached.
+
+    ``AF phi`` fails in one of two ways: the run stops before ``phi``, which
+    :func:`_eu_path` exhibits as a path to a dead marking outside it, or the
+    run goes on forever without reaching it. The second has no finite witness
+    unless the repeating part is produced -- which is what this returns.
+
+    Soundness. Let ``S`` be the nodes that do not satisfy ``AF phi``. No node
+    of ``S`` satisfies ``phi``; and every node of ``S`` with successors has one
+    in ``S``, since otherwise all of them would satisfy ``AF phi`` and so would
+    it. A walk from the initial marking inside ``S`` therefore only halts at a
+    dead marking, so when no dead marking of ``S`` is reachable -- which is
+    exactly the case where :func:`_eu_path` found nothing -- the walk must
+    repeat a node, and the repetition is the cycle.
+
+    Args:
+        ss (StateSpace): The graph.
+        target (set): Nodes satisfying the operand.
+
+    Returns:
+        tuple|None: ``(prefix, cycle)``, each a list of
+        ``(transition index, binding key, node)``; the prefix ends where the
+        cycle begins. None when the initial marking satisfies the formula, or
+        when every way of avoiding the target reaches a dead marking instead.
+    """
+    inside = set(range(ss.n_nodes)) - _af(ss, target, "textbook")
+    if 0 not in inside:
+        return None
+    path: list = []                 # steps from the initial marking
+    position = {0: 0}               # node currently on the path -> path length
+    explored = {0}                  # nodes whose subtree held no cycle
+    stack = [(0, iter(ss.succ[0]))]
+    while stack:
+        node, successors = stack[-1]
+        descended = False
+        for ti, key, w in successors:
+            if w not in inside:
+                continue
+            if w in position:                       # back edge: the cycle
+                cut = position[w]
+                return path[:cut], path[cut:] + [(ti, key, w)]
+            if w in explored:                       # no cycle down there
+                continue
+            explored.add(w)
+            path.append((ti, key, w))
+            position[w] = len(path)
+            stack.append((w, iter(ss.succ[w])))
+            descended = True
+            break
+        if not descended:
+            stack.pop()
+            if path:
+                _ti, _key, left = path.pop()
+                del position[left]
     return None

@@ -10,6 +10,9 @@ CPNCheck was extracted from `pyruleanalyzer`.
 * **Step 4 — done.** The structural and conformance techniques, the mutation
   operators and the property catalog are all generic or profile-supplied. The
   only ML left in the package is under `cpncheck/profiles/`.
+* **Step 6 — done.** Counterexamples are objects: bindings and markings along
+  the trace, lassos for the liveness properties, a witness input for guard
+  overlap, and `replay()` as a certificate.
 
 `pyruleanalyzer` is **not yet modified** and does not depend on CPNCheck; it
 still carries its own copy. Nothing there breaks until step 7 below is done
@@ -29,6 +32,7 @@ deliberately.
 | `cpncheck/profile.py` | **new (phase 2)** | the caller's side of the interface |
 | `cpncheck/structural.py` | **step 4**, from `model_checker.py` | guard boxes: what holds for every input |
 | `cpncheck/conformance.py` | **step 4**, from `model_checker.py` | run to a dead marking, compare with a reference |
+| `cpncheck/counterexample.py` | **new (step 6)** | the evidence a violated property hands back |
 | `cpncheck/profiles/ml_trees.py` | **phase 2**, from `model_checker.py` | the tree nets: structure, catalog, formulas |
 | `cpncheck/profiles/ml_trees_mutants.py` | **step 4**, from `cpn_mutants.py` | the sixteen tree mutation operators |
 | `cpncheck/properties.py` | `model_checker.py` 115–239 | the property descriptors; no catalog of its own |
@@ -89,11 +93,12 @@ member that failed. All twenty catalog properties are written with these in
 
 Two things every formula does:
 
-* **it explains itself.** `AG` reports the shortest occurrence sequence to a
-  violating marking and asks the operand *why that marking is bad*; `AF`
-  reports a maximal sequence that never reaches the goal; `Not(EU(...))`
-  reports the sequence witnessing the until. This is where counterexamples will
-  be built out (phase 4).
+* **it explains itself.** `counterexample(ctx)` returns a
+  `Counterexample`: `AG` the shortest occurrence sequence to a violating
+  marking, asking the operand *why that marking is bad*; `AF` a maximal
+  sequence that never reaches the goal, as a lasso when the run is infinite;
+  `Not(EU(...))` the sequence witnessing the until. `explain(ctx)` is just its
+  rendering.
 * **it renders to ASK-CTL.** `cpncheck/askctl.py` turns the same tree into the
   CPN ML query, so the Python check and the CPN Tools script cannot be asked
   different questions. Before phase 2 they were written by hand side by side.
@@ -171,6 +176,13 @@ but a net drawn by hand in CPN Tools will usually be rejected.
 * Guard boxes now track strictness, so `x >= 3` and `x <= 3` are correctly
   found to overlap at the single point 3. The exporter only emits `<=` and `>`,
   so no verdict on a generated net changes.
+* `StateSpace.parent` entries are now `(source, transition, binding key)`, and
+  `StateSpace.path(node)` returns the arcs rather than their names; `trace()`
+  is unchanged. A trace without its bindings cannot be re-fired, which is what
+  `replay()` needs.
+* A counterexample for a net checked with explicit `samples` renders as
+  `for input=(...): ...`, so a violation that needs a particular input can no
+  longer be mistaken for one that happens on all of them.
 * `ForEach` renders to a right-folded `AND`, so a forest with many trees
   produces a deep expression. Fine so far; revisit if it becomes a problem.
 
@@ -183,11 +195,9 @@ but a net drawn by hand in CPN Tools will usually be rejected.
 4. ~~Generalise the structural and conformance techniques, the mutation
    operators and the catalog.~~ **done**
 5. Pluggable ML prelude; widen the CPN ML fragment (§3 step 5, §4).
-6. **Counterexamples** — structured objects, bindings and markings along the
+6. ~~**Counterexamples** — structured objects, bindings and markings along the
    trace, lasso witnesses for the `AF` properties, a witness point for guard
-   overlap, `replay()` as a certificate. The explanations built in phase 2 are
-   the hook: every operator already knows what a counterexample to it looks
-   like, it just returns a string today.
+   overlap, `replay()` as a certificate.~~ **done**
 7. Switch pyruleanalyzer over and delete its copy:
 
 ```python

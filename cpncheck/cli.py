@@ -51,7 +51,41 @@ def _cmd_check(args):
         print(result.latex_table())
     else:
         print(result.report())
+        if args.trace:
+            print(_traces(result))
     return 0 if result.passed else 1
+
+
+# Function to render the full counterexample of every violated property.
+def _traces(result):
+    """Full occurrence sequences, with bindings, for the failed properties.
+
+    The report elides long traces; this prints them whole, with the variable
+    binding of every occurrence, and says whether each one replays.
+
+    Args:
+        result (ModelCheckResult): The verdicts.
+
+    Returns:
+        str: The section, or a note that there is nothing to show.
+    """
+    failures = [r for r in result.failures if r.cex is not None]
+    if not failures:
+        return "  no counterexamples to show"
+    lines = ["  Counterexamples", "  " + "-" * 78]
+    for r in failures:
+        cex = r.cex
+        lines.append(f"  {r.id}  [{cex.kind}] {cex.note}")
+        if cex.input is not None:
+            lines.append(f"        input   : {cex.input}")
+        if cex.prefix or cex.cycle:
+            lines.append(f"        sequence: "
+                         f"{cex.sequence(limit=10 ** 6, bindings=True)}")
+        for key, value in sorted(cex.data.items()):
+            if key != "input_places":
+                lines.append(f"        {key:<8}: {value}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 # Function to run the askctl command.
@@ -139,6 +173,8 @@ def build_parser():
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     p.add_argument("--json", help="also write the verdicts as JSON")
     p.add_argument("--latex", action="store_true", help="print a LaTeX table")
+    p.add_argument("--trace", action="store_true",
+                   help="print the full counterexample of every violation")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=_cmd_check)
 

@@ -31,6 +31,7 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..coloured import ColouredNet
+from ..counterexample import Counterexample
 from ..conformance import check_conformance
 from ..formula import (AF, AG, EF, EU, AllMarked, And, Dead, Enabled,
                        EnabledCount, ForEach, Implies, Marked, MaxTokens, Not,
@@ -42,6 +43,19 @@ from ..structural import overlapping_guards
 from ..selectors import Explicit, Group, Places, Transitions
 
 __all__ = ["TREE_CATALOG", "TreeStructure", "MLTreeProfile"]
+
+
+# Function to render a sample record compactly.
+def _show(values):
+    """A short rendering of a record of reals.
+
+    Args:
+        values (tuple): The field values.
+
+    Returns:
+        str: ``(2.5, 0, 7)``.
+    """
+    return "(" + ", ".join(f"{v:g}" for v in values) + ")"
 
 
 # Class locating the places and transitions the properties refer to.
@@ -469,6 +483,37 @@ class MLTreeProfile(Profile):
         from .ml_trees_mutants import analyse
         return analyse(path)
 
+    # Method to turn a point of the guard space into a whole input record.
+    @staticmethod
+    def _record(point, width):
+        """Fill a sample record from the fields a guard overlap constrains.
+
+        The overlap only pins down the fields both guards mention; the rest
+        may be anything, and zero will do. The result is an input the net can
+        actually be run on, which is what makes a structural finding
+        reproducible: given back as a sample, it must make the leaf-
+        determinism property fail on the very pair reported here.
+
+        Args:
+            point (dict): ``{(variable, field): value}`` from the analysis.
+            width (int): Number of fields in the record.
+
+        Returns:
+            tuple|None: The record, or None when the fields are not the
+            ``f<i>`` of a sample record.
+        """
+        if not width:
+            return None
+        values = [0.0] * width
+        for (_var, field), value in point.items():
+            if not field or not re.fullmatch(r"f(\d+)", field):
+                return None
+            index = int(field[1:])
+            if index >= width:
+                return None
+            values[index] = float(value)
+        return tuple(values)
+
     # Method to normalise an input into the token the net expects.
     def as_input_token(self, net, x, feature_names=None):
         """Convert a sample into the ``SAMPLE`` record the net reads.
@@ -589,10 +634,19 @@ class MLTreeProfile(Profile):
         elapsed = time.perf_counter() - t0
         spec = self.catalog.get("B4")
         if found:
-            page, a, b = found[0]
-            return PropertyResult("B4", False,
-                                  f"{len(found)} overlapping leaf pair(s), "
-                                  f"first: {page} {a} / {b}", elapsed, spec=spec)
+            page, a, b, point = found[0]
+            sample = self._record(point, checker.width)
+            note = (f"{len(found)} overlapping leaf pair(s), first: "
+                    f"{page} {a} / {b}")
+            if sample is not None:
+                note += f"; both hold at x={_show(sample)}"
+            cex = Counterexample(
+                "structural", note=note, input=sample,
+                data={"page": page, "leaves": (a, b),
+                      "overlapping_pairs": len(found),
+                      "input_places": checker.input_places})
+            return PropertyResult("B4", False, str(cex), elapsed, spec=spec,
+                                  cex=cex)
         if unparsed:
             return PropertyResult("B4", None, f"{unparsed} leaf guard(s) are not "
                                   "conjunctions of bounds", elapsed, spec=spec)
