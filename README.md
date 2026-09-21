@@ -40,6 +40,11 @@ for r in result.failures:
 `ModelCheckResult` exposes `passed`, `failures`, `skipped`, `properties`,
 `stats`, `oracle`, `report()`, `to_dict()`, `latex_rows()` and `latex_table()`.
 
+`python examples/walkthrough.py` runs all of it on the nets under `tests/nets`
+and prints what each layer produced, step by step — the XML, the compiled
+guards, the occurrence graph, one run marking by marking, the verdicts, the
+counterexamples and the mutants. See [examples/](examples/).
+
 ## Counterexamples
 
 A violated property hands back evidence, not a sentence. `r.cex` is a
