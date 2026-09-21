@@ -113,6 +113,27 @@ class Profile:
         """
         return collections.OrderedDict()
 
+    # Method to name the properties that apply but cannot be answered.
+    def unavailable(self, net, groups, labels) -> Dict[str, str]:
+        """Properties this net has, which this run cannot decide.
+
+        A property the net simply does not have -- an aggregation property in
+        a net that aggregates nothing -- is left out of
+        :meth:`ctl_formulas` and never mentioned. A property the net *does*
+        have, which cannot be decided because something was not supplied, is
+        different: leaving it out silently would look like it passed. Name it
+        here and it is reported as skipped, with the reason.
+
+        Args:
+            net (ColouredNet): The flattened net.
+            groups (dict): The resolved groups.
+            labels (list, optional): The token domain, when known.
+
+        Returns:
+            dict: ``property id -> why it cannot be decided``.
+        """
+        return {}
+
     # Method to name the properties answered by SCC analysis.
     def scc_properties(self, net, groups) -> "collections.OrderedDict[str, str]":
         """Properties answered from the SCC decomposition.

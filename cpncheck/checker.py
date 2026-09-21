@@ -108,6 +108,8 @@ class CPNModelChecker:
         self.formulas = self.profile.ctl_formulas(
             self.cnet, self.groups, self.labels)
         self.scc_props = self.profile.scc_properties(self.cnet, self.groups)
+        self.unavailable = dict(self.profile.unavailable(
+            self.cnet, self.groups, self.labels))
         self.catalog = getattr(self.profile, "catalog",
                                collections.OrderedDict())
         self.structure = (self.profile.structure(self.cnet)
@@ -126,7 +128,7 @@ class CPNModelChecker:
         Returns:
             list: Identifiers, in catalog order.
         """
-        ids = set(self.formulas) | set(self.scc_props)
+        ids = set(self.formulas) | set(self.scc_props) | set(self.unavailable)
         return [pid for pid in self.catalog if pid in ids]
 
     # ------------------------------------------------------------------
@@ -239,6 +241,10 @@ class CPNModelChecker:
                 if pid in self.formulas:
                     oracle[key] = ("true" if 0 in ev.sat(self.formulas[pid])
                                    else "false")
+
+        for pid, reason in self.unavailable.items():
+            res[pid] = PropertyResult(pid, None, reason,
+                                      spec=self.catalog.get(pid))
 
         for pid, kind in self.scc_props.items():
             t0 = time.perf_counter()

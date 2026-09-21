@@ -118,6 +118,7 @@ the property descriptors. What a profile now supplies, all of it optional:
 | Hook | What it answers |
 |---|---|
 | `matches` / `family` | is this one of my nets, and what do I call it |
+| `unavailable` | properties this net has that this run cannot decide |
 | `resolve_groups` | the domains `ForEach` quantifies over |
 | `ctl_formulas` | the temporal properties, as formulas |
 | `scc_properties` | the properties answered from the SCC decomposition |
@@ -214,14 +215,29 @@ screen.
 6. ~~**Counterexamples** — structured objects, bindings and markings along the
    trace, lasso witnesses for the `AF` properties, a witness point for guard
    overlap, `replay()` as a certificate.~~ **done**
-7. Switch pyruleanalyzer over and delete its copy:
+7. ~~Switch pyruleanalyzer over and delete its copy.~~ **done**
 
 ```python
+
 # pyruleanalyzer/model_checker.py
 from cpncheck import CPNModelChecker, check_cpn, compare_results  # noqa: F401
 from cpncheck.profiles.ml_trees import TREE_CATALOG, MLTreeProfile  # noqa: F401
 ```
 
 `pyruleanalyzer` declares `cpncheck` as a normal dependency (it has none of its
-own, so this is free) and keeps the exporter, `evaluate` and the conformance
-reference function.
+own, so this is free) and keeps the exporter, `evaluate` and the four methods
+of `CPNNet` that read a net as a tree ensemble. Its `cpn_statespace`,
+`model_checker`, `cpn_mutants` and `cpntools_oracle` are re-exports, so no
+import of theirs changed.
+
+Three things the switch turned up, all fixed here:
+
+* a property that *applies but cannot be decided* was being left out of the
+  report rather than reported as skipped, which reads as if it had passed. A
+  profile now says so through `unavailable`; the tree profile uses it for the
+  valid-label property of a decision tree, whose label domain it cannot read.
+* `PropertyResult.spec` raised for a verdict built by hand. It synthesises a
+  bare descriptor instead: a report must be printable whatever it contains.
+* `initial_marking(token)` with no `places` quietly ignored the token, so a
+  caller checked every input against the net's own initial marking and was
+  never told. It raises now.

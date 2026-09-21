@@ -374,8 +374,16 @@ class ColouredNet:
             tuple: The initial marking, one sorted token tuple per place.
 
         Raises:
-            UnsupportedNet: When an initial marking cannot be evaluated.
+            UnsupportedNet: When an initial marking cannot be evaluated, or
+                when a token is given with no places to put it in. Quietly
+                ignoring the input would mean checking the net against the
+                wrong thing and never saying so.
         """
+        if token is not None and not places:
+            raise UnsupportedNet(
+                "initial_marking was given a token but no places to put it "
+                "in; pass places=..., which a profile supplies through "
+                "input_places()")
         override = set(places or ())
         marking = []
         for i, pl in enumerate(self.places):

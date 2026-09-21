@@ -57,16 +57,16 @@ class PropertyResult:
     def spec(self) -> Property:
         """The catalog descriptor.
 
-        Returns:
-            Property: The descriptor the verdict was given.
+        A verdict built by hand, or one for an identifier the profile's
+        catalog does not describe, gets a bare descriptor rather than an
+        error: a report must be printable whatever it contains.
 
-        Raises:
-            KeyError: When the verdict carries no descriptor, which means the
-                profile's catalog has no entry for this identifier.
+        Returns:
+            Property: The descriptor the verdict was given, or a bare one.
         """
         if self._spec is None:
-            raise KeyError(f"no descriptor for property {self.id!r}: the "
-                           "profile's catalog does not define it")
+            self._spec = Property(self.id, self.id, "", "desired", (),
+                                  "No description was supplied.")
         return self._spec
 
     # Property returning the printable status of the verdict.

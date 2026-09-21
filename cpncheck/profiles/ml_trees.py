@@ -321,6 +321,27 @@ class MLTreeProfile(Profile):
         """
         return self._label_domain(net, self.structure(net), declared)
 
+    # Method to name the properties that apply but cannot be answered.
+    def unavailable(self, net, groups, labels):
+        """The valid-label property, when the label domain is unknown.
+
+        Every one of these nets has a label domain; a decision tree just does
+        not write it down anywhere the checker can read, and then the caller
+        has to say. Reporting the property as skipped says so; omitting it
+        would read as if it had been checked.
+
+        Args:
+            net (ColouredNet): The flattened net.
+            groups (dict): The resolved groups.
+            labels (list, optional): The label domain.
+
+        Returns:
+            dict: ``{"A6": reason}`` when the domain is unknown.
+        """
+        if labels is None:
+            return {"A6": "label domain not declared; pass class_labels"}
+        return {}
+
     # Method to name the properties answered by SCC analysis.
     def scc_properties(self, net, groups):
         """The home-marking property.

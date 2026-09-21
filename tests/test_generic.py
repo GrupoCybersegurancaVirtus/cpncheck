@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from cpncheck import CPNModelChecker
+from cpncheck import METHODS, CPNModelChecker
 from cpncheck.askctl import MLProgram, UnsupportedFormula
 from cpncheck.coloured import ColouredNet
 from cpncheck.formula import (AF, AG, EF, AllMarked, And, Context, Dead,
@@ -20,6 +20,7 @@ from cpncheck.formula import (AF, AG, EF, AllMarked, And, Context, Dead,
                               MaxTokens, Not, Or, TokensIn)
 from cpncheck.net import CPNNet
 from cpncheck.profile import Profile, detect
+from cpncheck.profiles.ml_trees import MLTreeProfile
 from cpncheck.properties import Property
 from cpncheck.selectors import Explicit, Places, Transitions, outputs_of
 
@@ -173,6 +174,42 @@ def test_an_empty_transition_group_is_refused(net):
 def test_the_tree_profile_is_detected(net):
     profile = detect(net)
     assert profile is not None and profile.name == "ml_trees"
+
+
+def test_a_property_that_cannot_be_decided_is_skipped_not_hidden():
+    """"Does not apply" and "could not be answered" are different verdicts.
+
+    A net with no aggregation simply has no aggregation property, and it is
+    never mentioned. A net that *has* a label domain the checker cannot read
+    still has the valid-label property, and leaving it out would read as if it
+    had passed.
+    """
+    profile = MLTreeProfile()
+    net = ColouredNet(CPNNet(GBDT))
+    groups = profile.resolve_groups(net)
+    assert profile.unavailable(net, groups, None) == {
+        "A6": "label domain not declared; pass class_labels"}
+    assert profile.unavailable(net, groups, [0, 1]) == {}
+    assert "A6" not in profile.ctl_formulas(net, groups, None)
+    assert "A6" in profile.ctl_formulas(net, groups, [0, 1])
+
+
+def test_a_verdict_without_a_descriptor_still_prints():
+    from cpncheck.result import PropertyResult
+    bare = PropertyResult("Z9", True)
+    assert bare.spec.id == "Z9"
+    assert bare.spec.name == "Z9"
+    assert bare.spec.method == "ctl"
+
+
+def test_an_input_with_nowhere_to_go_is_an_error():
+    """Ignoring the token would check the net against the wrong input."""
+    from cpncheck.coloured import UnsupportedNet
+    net = ColouredNet(CPNNet(GBDT))
+    with pytest.raises(UnsupportedNet) as caught:
+        net.initial_marking((1.0,) * 6)
+    assert "places" in str(caught.value)
+    assert net.initial_marking((1.0,) * 6, places=(0,)) != net.initial
 
 
 def test_a_profile_written_here_drives_the_whole_checker():
