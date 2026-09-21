@@ -162,6 +162,33 @@ covers *every* input; `conformance` can call
 `mutation_operators` supplies the faults your properties must catch, built from
 `cpncheck.mutation.CPNDocument`.
 
+## What it understands of CPN ML
+
+Guards and inscriptions are parsed, not pattern-matched: `if`/`then`/`else`,
+`let`/`in`/`end`, `case`/`of`, `fn`, function application, the operators with
+their SML precedences and associativities, lists, tuples, records, multisets
+and type annotations. The expression compiles to a closure, so firing stays
+fast.
+
+A net's own `val` and `fun` declarations are read and used, which means **a net
+describes itself**. Nothing about what the tree nets compute is built into the
+checker: their soft voting and `argmax` come from the `<ml>` blocks of the
+`.cpn` file. Where a net leaves a function undeclared, supply it:
+
+```python
+check_cpn("model.cpn", prelude={"myFunction": lambda x: ...})
+```
+
+**Binding elements.** A variable that no input arc binds is enumerated over its
+declared colour set, the way CPN Tools does it — `unit`, `bool`, enumerations,
+index ranges and the products, records, subsets and aliases built from them. A
+free variable whose colour set is infinite makes the net unexplorable and is
+refused by name, never quietly ignored.
+
+Still missing: timed nets, fusion sets beyond port/socket fusion, and
+user-declared datatypes. Anything outside the fragment raises `UnsupportedNet`
+rather than being mis-read — a wrong reading of a guard is a wrong verdict.
+
 ## Status
 
 Pre-release, extracted from
@@ -170,9 +197,9 @@ where it verifies Hierarchical CPN models generated from decision trees, random
 forests and gradient boosting — now one profile among others
 (`cpncheck/profiles/ml_trees.py`).
 
-The main limitation is that the **supported CPN ML fragment is narrow** — no
-`if`/`case`/`let`/`fn`, no colour-set-driven binding enumeration, no timed
-nets. Anything outside it raises `UnsupportedNet` instead of being silently
-mis-read. See [MIGRATION.md](MIGRATION.md) for that and the rest of the plan.
+Agreement with CPN Tools is measured, not assumed: 28 nets — two correct ones
+and every mutant of each — agree on every statistic and every verdict, with 81
+*false* verdicts confirmed by CPN Tools itself. See [MIGRATION.md](MIGRATION.md)
+for what remains.
 
 MIT licensed.

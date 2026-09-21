@@ -1,262 +1,47 @@
-"""The CPN ML fragment, and the flattened net that can be fired.
+"""The flattened net: what it means, and how it fires.
 
-Two things live here:
+:class:`ColouredNet` fuses the page hierarchy read by
+:class:`cpncheck.net.CPNNet` into one place/transition net, compiles every
+guard and inscription with the CPN ML front end (:mod:`cpncheck.cpnml`), and
+enumerates and fires the binding elements enabled in a marking.
 
-* a compiler from the supported fragment of CPN ML into Python code objects --
-  guards, arc inscriptions and initial markings;
-* :class:`ColouredNet`, which fuses the page hierarchy read by
-  :class:`cpncheck.net.CPNNet` into one flat place/transition net, enumerates
-  the binding elements enabled in a marking and fires them.
+Binding elements
+----------------
+A transition's variables come from two places. Most are bound by matching its
+input-arc patterns against the tokens available -- that is the cheap half, and
+the only half a generated net needs. The rest are *free*: a variable the guard
+or an output arc mentions and no input arc binds. CPN Tools finds those by
+running through the variable's colour set, and so does this: the declared
+colour set gives the domain, and every combination is tried. A free variable
+whose colour set is infinite makes the net unexplorable, and it is refused
+rather than silently ignored.
 
-The supported fragment is deliberately narrow and every net outside it raises
-:class:`UnsupportedNet` rather than being silently mis-read. ``MIGRATION.md``
-lists what is missing for arbitrary CPN Tools nets.
+Values
+------
+Tokens are Python values, chosen so a marking is hashable and orderable: a
+record is a tuple in declared field order, a list is a tuple, unit is the empty
+tuple. Two markings are the same node exactly when they are equal.
 """
 
 import collections
-import re
+import itertools
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from .colourset import Declarations
+from .cpnml import (MLError, Parser, compile_expression, free_variables,
+                    match_pattern, parse_expression, parse_multiset,
+                    pattern_variables, tokenize)
 from .net import CPNNet
 
-__all__ = [
-    "UnsupportedNet",
-    "ColouredNet",
-    "sml_expr_to_python",
-    "compile_guard",
-    "compile_output",
-    "parse_pattern",
-    "parse_initial_marking",
-]
+__all__ = ["UnsupportedNet", "ColouredNet"]
+
+#: How many binding elements one transition may have before giving up.
+MAX_BINDINGS = 100_000
 
 
 # Exception raised when a net uses CPN ML outside the supported fragment.
 class UnsupportedNet(Exception):
     """The net uses a construct the state-space generator does not implement."""
-
-
-# ---------------------------------------------------------------------------
-# CPN ML fragment -> Python
-# ---------------------------------------------------------------------------
-
-# Function to add two probability vectors element-wise, as the ML vadd does.
-def _vadd(xs, ys):
-    """ML ``vadd``: ``ListPair.map (op +)``, truncating to the shorter list.
-
-    Args:
-        xs (tuple): First vector.
-        ys (tuple): Second vector.
-
-    Returns:
-        tuple: The element-wise sum.
-    """
-    return tuple(a + b for a, b in zip(xs, ys))
-
-
-# Function to sum a list of vectors, as the ML vsum does.
-def _vsum(vectors):
-    """ML ``vsum``: ``List.foldl vadd h t`` (empty list gives the empty vector).
-
-    Args:
-        vectors (list): Vectors to add.
-
-    Returns:
-        tuple: The accumulated vector.
-    """
-    vectors = list(vectors)
-    if not vectors:
-        return ()
-    acc = tuple(vectors[0])
-    for vec in vectors[1:]:
-        acc = _vadd(vec, acc)          # foldl f init: f (element, accumulator)
-    return acc
-
-
-# Function to return the index of the maximum, lowest index winning ties.
-def _argmax(values):
-    """ML ``argmax``: strict ``>`` scan from the left, so ties keep the first.
-
-    Args:
-        values (tuple): The vector.
-
-    Returns:
-        int: Index of the maximum (0 for the empty vector).
-    """
-    values = list(values)
-    if not values:
-        return 0
-    best, best_index = values[0], 0
-    for i, v in enumerate(values[1:], start=1):
-        if v > best:
-            best, best_index = v, i
-    return best_index
-
-
-# Function to test whether every entry of a vector is zero, as ML allzero does.
-def _allzero(values):
-    """ML ``allzero``: ``x <= 0.0 andalso x >= 0.0`` for every entry.
-
-    Args:
-        values (tuple): The vector.
-
-    Returns:
-        bool: True when every entry is exactly zero.
-    """
-    return all(v <= 0.0 and v >= 0.0 for v in values)
-
-
-# Function to split a string on a separator at bracket depth zero.
-def _split_top(text: str, sep: str) -> List[str]:
-    """Split on ``sep`` only where it is not nested inside brackets.
-
-    Args:
-        text (str): Source text.
-        sep (str): Separator (``","`` or ``"++"``).
-
-    Returns:
-        list: The top-level pieces.
-    """
-    out, depth, cur, i = [], 0, [], 0
-    while i < len(text):
-        ch = text[i]
-        if ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        if depth == 0 and text.startswith(sep, i):
-            out.append("".join(cur))
-            cur = []
-            i += len(sep)
-            continue
-        cur.append(ch)
-        i += 1
-    out.append("".join(cur))
-    return out
-
-
-# Function to strip one pair of enclosing parentheses when they wrap the text.
-def _strip_parens(text: str) -> str:
-    """Remove outer parentheses only if they enclose the whole expression.
-
-    Args:
-        text (str): Source text.
-
-    Returns:
-        str: The text without a redundant enclosing pair.
-    """
-    text = text.strip()
-    while text.startswith("(") and text.endswith(")"):
-        depth = 0
-        for i, ch in enumerate(text):
-            depth += ch == "("
-            depth -= ch == ")"
-            if depth == 0 and i < len(text) - 1:
-                return text
-        text = text[1:-1].strip()
-    return text
-
-
-# Function to translate a CPN ML expression of the supported fragment to Python.
-def sml_expr_to_python(expr: str) -> str:
-    """Translate one CPN ML expression into Python source.
-
-    Args:
-        expr (str): The ML expression (guard body or arc inscription term).
-
-    Returns:
-        str: Equivalent Python source over the bound variables.
-
-    Raises:
-        UnsupportedNet: For constructs outside the supported fragment.
-    """
-    out = expr.strip()
-    if re.search(r"\b(fn|let|case|if|val|fun|div|mod|ref)\b", out):
-        raise UnsupportedNet(f"unsupported CPN ML expression: {expr!r}")
-    if "`" in out:
-        raise UnsupportedNet(f"nested multiset in expression: {expr!r}")
-    out = re.sub(r"#f(\d+)\s+([A-Za-z_]\w*)", r"\2[\1]", out)
-    out = out.replace("~", "-")
-    out = re.sub(r"\bandalso\b", " and ", out)
-    out = re.sub(r"\borelse\b", " or ", out)
-    out = re.sub(r"\bnot\b", " not ", out)
-    out = re.sub(r"\btrue\b", "True", out)
-    out = re.sub(r"\bfalse\b", "False", out)
-    out = out.replace("<>", "!=")
-    out = re.sub(r"(?<![<>=!])=(?!=)", "==", out)
-    return out
-
-
-# Function to compile a guard into a Python code object.
-def compile_guard(guard: Optional[str]):
-    """Compile a transition guard.
-
-    CPN Tools writes guards as ``[e1, e2, ...]``, a list of conditions that must
-    all hold; the brackets are removed and the conditions conjoined.
-
-    Args:
-        guard (str): Guard text, possibly empty.
-
-    Returns:
-        code: A code object, or None when the transition has no guard.
-    """
-    text = (guard or "").strip()
-    if not text:
-        return None
-    if text.startswith("[") and text.endswith("]"):
-        text = text[1:-1].strip()
-    if not text:
-        return None
-    parts = [sml_expr_to_python(p) for p in _split_top(text, ",") if p.strip()]
-    return compile(" and ".join(f"({p})" for p in parts), "<guard>", "eval")
-
-
-# Function to compile an output arc inscription into (count, code) terms.
-def compile_output(expr: str) -> List[Tuple[int, Any]]:
-    """Compile an output inscription, which may be a multiset.
-
-    Args:
-        expr (str): The inscription, e.g. ``(x, sc + lv)`` or ``1`0 ++ 1`1``.
-
-    Returns:
-        list: ``(count, code)`` pairs, one per multiset term.
-    """
-    terms = []
-    for term in _split_top(expr.strip(), "++"):
-        term = term.strip()
-        if not term:
-            continue
-        m = re.fullmatch(r"(\d+)\s*`\s*(.+)", term, flags=re.S)
-        count, body = (int(m.group(1)), m.group(2)) if m else (1, term)
-        terms.append((count, compile(sml_expr_to_python(body), "<arc>", "eval")))
-    if not terms:
-        raise UnsupportedNet(f"empty arc inscription {expr!r}")
-    return terms
-
-
-# Function to parse an input arc inscription into a pattern tree.
-def parse_pattern(expr: str):
-    """Parse an input-arc pattern: variable, literal or tuple of patterns.
-
-    Args:
-        expr (str): The inscription.
-
-    Returns:
-        tuple: ``("var", name)``, ``("lit", value)`` or ``("tuple", [..])``.
-
-    Raises:
-        UnsupportedNet: For patterns outside the fragment.
-    """
-    text = _strip_parens(expr)
-    parts = _split_top(text, ",")
-    if len(parts) > 1:
-        return ("tuple", [parse_pattern(p) for p in parts])
-    text = text.strip()
-    if re.fullmatch(r"[a-z_][A-Za-z0-9_']*", text) and text not in ("true", "false"):
-        return ("var", text)
-    try:
-        return ("lit", _canon(eval(sml_expr_to_python(text), {"__builtins__": {}})))  # noqa: S307
-    except Exception as exc:
-        raise UnsupportedNet(f"unsupported input pattern {expr!r}: {exc}")
 
 
 # Function to put a token value in canonical, hashable form.
@@ -269,136 +54,94 @@ def _canon(value):
     Returns:
         The canonical value.
     """
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return tuple(_canon(v) for v in value)
-    if isinstance(value, bool):
-        return value
+    if isinstance(value, tuple):
+        return tuple(_canon(v) for v in value)
     return value
 
 
-# Function to match a pattern against a token under a partial binding.
-def _match(pattern, token, env):
-    """Extend ``env`` so that ``pattern`` evaluates to ``token``.
+# Function to parse a multiset of patterns, as an input arc carries.
+def parse_pattern_multiset(text: str) -> List[Tuple[int, Any]]:
+    """Parse ``2`x ++ 1`(a, b)`` into counted patterns.
+
+    An input arc consumes a multiset, so a coefficient means "this many
+    tokens, each matching the pattern". The coefficient has to be a literal:
+    a variable number of tokens would have to be solved for, not matched.
 
     Args:
-        pattern (tuple): Pattern tree from :func:`parse_pattern`.
-        token: The candidate token.
-        env (dict): Variables bound so far.
+        text (str): The inscription.
 
     Returns:
-        dict|None: The extended binding, or None if they do not match.
+        list: ``(count, pattern)`` pairs.
+
+    Raises:
+        UnsupportedNet: On a syntax error or a non-literal coefficient.
     """
-    kind = pattern[0]
-    if kind == "var":
-        name = pattern[1]
-        if name in env:
-            return env if env[name] == token else None
-        new = dict(env)
-        new[name] = token
-        return new
-    if kind == "lit":
-        return env if pattern[1] == token else None
-    items = pattern[1]
-    if not isinstance(token, tuple) or len(token) != len(items):
-        return None
-    for sub, tok in zip(items, token):
-        env = _match(sub, tok, env)
-        if env is None:
-            return None
-    return env
-
-
-# Function to rebuild the token a pattern denotes under a complete binding.
-def _instantiate(pattern, env):
-    """Evaluate a pattern back into the token it consumes.
-
-    Args:
-        pattern (tuple): Pattern tree.
-        env (dict): Complete binding.
-
-    Returns:
-        The token value.
-    """
-    kind = pattern[0]
-    if kind == "var":
-        return env[pattern[1]]
-    if kind == "lit":
-        return pattern[1]
-    return tuple(_instantiate(p, env) for p in pattern[1])
-
-
-# Function to parse an initial marking into a multiset of token values.
-def parse_initial_marking(text: Optional[str]) -> List[Any]:
-    """Parse a place's initial marking.
-
-    Record literals ``{f0=v0, f1=v1, ...}`` become tuples ordered by field
-    number, which is how guards address them (``#f3 x`` is ``x[3]``).
-
-    Args:
-        text (str): The initial-marking inscription, possibly empty.
-
-    Returns:
-        list: The tokens.
-    """
-    tokens: List[Any] = []
-    text = (text or "").strip()
-    if not text:
-        return tokens
-    for term in _split_top(text, "++"):
-        term = term.strip()
-        m = re.fullmatch(r"(\d+)\s*`\s*(.+)", term, flags=re.S)
-        count, body = (int(m.group(1)), m.group(2).strip()) if m else (1, term)
-        if body.startswith("{"):
-            fields = re.findall(r"f(\d+)\s*=\s*\(?\s*(~?[\d.]+(?:[eE]~?\d+)?)\s*\)?",
-                                body)
-            value = tuple(float(v.replace("~", "-"))
-                          for _, v in sorted(fields, key=lambda f: int(f[0])))
-        else:
-            value = _canon(eval(sml_expr_to_python(body),  # noqa: S307
-                                {"__builtins__": {}}))
-        tokens.extend([value] * count)
-    return tokens
+    try:
+        parser = Parser(tokenize(text or ""), text or "")
+        if parser.peek()[0] == "end":
+            raise MLError("an input arc needs an inscription")
+        terms = []
+        while True:
+            count = 1
+            token = parser.peek()
+            following = (parser.tokens[parser.pos + 1][:2]
+                         if parser.pos + 1 < len(parser.tokens) else (None, None))
+            if token[0] == "int" and following == ("op", "`"):
+                count = parser.next()[1]
+                parser.next()
+            elif token[0] not in ("int", "real", "str") and following == \
+                    ("op", "`"):
+                raise MLError("an input arc needs a literal coefficient")
+            terms.append((count, parser.pattern()))
+            if not parser.accept("op", "++"):
+                break
+        if parser.peek()[0] != "end":
+            raise MLError(f"unexpected {parser.peek()[1]!r}")
+        return terms
+    except MLError as exc:
+        raise UnsupportedNet(f"input arc {(text or '').strip()!r}: {exc}")
 
 
 # ---------------------------------------------------------------------------
-# The flattened coloured net
+# The flattened net
 # ---------------------------------------------------------------------------
 
-# Class holding a hierarchy-free view of a generated net, ready to fire.
+# Class holding a hierarchy-free view of a net, ready to fire.
 class ColouredNet:
     """A flattened Coloured Petri Net with compiled guards and inscriptions.
 
     Attributes:
-        places (list): Place records ``{gid, name, page, port}``; list index is
-            the place index used in markings.
+        places (list): Place records ``{gid, name, page, port, initmark}``;
+            the list index is the place index used in markings.
         transitions (list): Transition records with compiled guard, input
-            patterns and output terms.
+            patterns, output terms and the variables to enumerate.
+        declarations (Declarations): The net's colour sets, variables and
+            declared values.
+        env (dict): Names every expression can use.
         initial (tuple): The initial marking.
-        family (str): Model family detected from the top page.
     """
 
     # Method to flatten and compile a parsed net.
-    def __init__(self, net: CPNNet, sample: Optional[Sequence[float]] = None,
-                 default_class: int = 0):
+    def __init__(self, net: CPNNet, prelude: Optional[Dict[str, Any]] = None):
         """Flatten the hierarchy and compile every inscription.
 
         Args:
             net (CPNNet): The parsed ``.cpn``.
-            sample (sequence, optional): Replaces the token of the ``Input``
-                place, so the same net can be explored for another input.
-            default_class (int): Fallback class of the declared ``decide``
-                function, read from the net's ML declarations when present.
+            prelude (dict, optional): Names added to the net's own
+                declarations, and winning over them. A net that declares its
+                functions in ML needs none of this; it is for the one that
+                does not.
+
+        Raises:
+            UnsupportedNet: When an inscription cannot be compiled.
         """
         self.net = net
-        self.family = net.family()
+        self.declarations = Declarations(net.path, prelude)
+        self.env = self.declarations.globals
+        self.fields = self.declarations.fields
         self.top = net.top_page()
-        self.default_class = self._read_decide_default(default_class)
-        self.env = {
-            "__builtins__": {},
-            "vadd": _vadd, "vsum": _vsum, "argmax": _argmax,
-            "allzero": _allzero,
-            "decide": lambda xs: self.default_class if _allzero(xs) else _argmax(xs),
-        }
         self.places: List[Dict[str, Any]] = []
         self.transitions: List[Dict[str, Any]] = []
         self.port_of: Dict[Tuple[str, str], int] = {}
@@ -408,33 +151,101 @@ class ColouredNet:
         for ti, t in enumerate(self.transitions):
             for pidx in {p for p, _ in t["in"]}:
                 self.consumers[pidx].append(ti)
-        self.initial = self.initial_marking(sample)
+        self.initial = self.initial_marking()
 
-    # Method to read the default class baked into the declared decide function.
-    def _read_decide_default(self, fallback: int) -> int:
-        """Read ``if allzero xs then <k> else argmax xs`` from the declarations.
+    # Method to compile one expression against the net's declarations.
+    def compile(self, text: str):
+        """Compile a CPN ML expression in the net's environment.
 
         Args:
-            fallback (int): Value used when the net declares no ``decide``.
+            text (str): The source.
 
         Returns:
-            int: The default class.
+            callable: ``env -> value``.
+
+        Raises:
+            UnsupportedNet: When it cannot be parsed or compiled.
         """
-        import xml.etree.ElementTree as ET
         try:
-            root = ET.parse(self.net.path).getroot()
-        except Exception:
-            return fallback
-        for ml in root.iter("ml"):
-            text = "".join(ml.itertext())
-            m = re.search(r"fun\s+decide.*?allzero\s+\w+\s+then\s+(~?\d+)", text, re.S)
-            if m:
-                return int(m.group(1).replace("~", "-"))
-        return fallback
+            return compile_expression(parse_expression(text), self.env,
+                                      self.fields)
+        except MLError as exc:
+            raise UnsupportedNet(f"{text.strip()!r}: {exc}")
+
+    # Method to compile a transition guard.
+    def compile_guard(self, text: Optional[str]):
+        """Compile a guard, which CPN Tools writes as a list of conditions.
+
+        Args:
+            text (str, optional): The guard text, possibly empty.
+
+        Returns:
+            tuple|None: ``(callable, expression trees)``, or None when the
+            transition has no guard.
+
+        Raises:
+            UnsupportedNet: When the guard cannot be compiled.
+        """
+        text = (text or "").strip()
+        if not text:
+            return None
+        try:
+            tree = parse_expression(text)
+        except MLError as exc:
+            raise UnsupportedNet(f"guard {text!r}: {exc}")
+        parts = tree[1] if tree[0] == "list" else [tree]
+        if not parts:
+            return None
+        try:
+            codes = [compile_expression(part, self.env, self.fields)
+                     for part in parts]
+        except MLError as exc:
+            raise UnsupportedNet(f"guard {text!r}: {exc}")
+
+        def holds(env, codes=codes):
+            return all(bool(code(env)) for code in codes)
+        return holds, parts
+
+    # Method to compile an output arc inscription.
+    def compile_output(self, text: str):
+        """Compile an output inscription, which may be a multiset.
+
+        Args:
+            text (str): The inscription.
+
+        Returns:
+            tuple: ``(terms, expression trees)``, where a term is
+            ``(count callable or int, value callable)``.
+
+        Raises:
+            UnsupportedNet: When the inscription cannot be compiled.
+        """
+        try:
+            parsed = parse_multiset(text)
+            terms, trees = [], []
+            for coefficient, value in parsed:
+                count = (1 if coefficient is None
+                         else compile_expression(coefficient, self.env,
+                                                 self.fields))
+                terms.append((count, compile_expression(value, self.env,
+                                                        self.fields)))
+                trees.append(value)
+                if coefficient is not None:
+                    trees.append(coefficient)
+            if not terms:
+                raise MLError("empty inscription")
+            return terms, trees
+        except MLError as exc:
+            raise UnsupportedNet(f"output arc {text.strip()!r}: {exc}")
 
     # Method to expand the page hierarchy into flat places and transitions.
     def _flatten(self):
-        """Fuse port places with their sockets and compile every transition."""
+        """Fuse port places with their sockets and compile every transition.
+
+        Raises:
+            UnsupportedNet: When a transition cannot be compiled, or has no
+                input arc and so would be enabled forever.
+        """
         places: Dict[str, Dict[str, Any]] = collections.OrderedDict()
         trans: List[Dict[str, Any]] = []
 
@@ -446,7 +257,8 @@ class ColouredNet:
                 if gid not in places:
                     places[gid] = {"gid": gid, "name": pl["name"],
                                    "page": page["name"], "port": pl.get("port"),
-                                   "initmark": pl.get("initmark")}
+                                   "initmark": pl.get("initmark"),
+                                   "colset": pl.get("type")}
                 if pl.get("port"):
                     self.port_of[(page["name"], pl["name"])] = gid
             for tid, tr in page["transitions"].items():
@@ -475,73 +287,130 @@ class ColouredNet:
         self.places = list(places.values())
         index = {p["gid"]: i for i, p in enumerate(self.places)}
         for t in trans:
-            try:
-                t["guard"] = compile_guard(t["guard_text"])
-                t["in"] = [(index[g], parse_pattern(e)) for g, e in t["in_raw"]]
-                t["out"] = [(index[g], compile_output(e)) for g, e in t["out_raw"]]
-            except UnsupportedNet as exc:
-                raise UnsupportedNet(f"{t['page']}/{t['name']}: {exc}")
-            if not t["in"]:
-                raise UnsupportedNet(f"{t['page']}/{t['name']} has no input arc "
-                                     "(it would be enabled forever)")
-            t["in_vars"] = self._pattern_vars([p for _, p in t["in"]])
+            self._compile_transition(t, index)
             self.transitions.append(t)
 
-    # Method to collect the variables a list of patterns binds.
-    @staticmethod
-    def _pattern_vars(patterns) -> set:
-        """Variables bound by a list of input patterns.
+    # Method to compile one transition's guard, arcs and variables.
+    def _compile_transition(self, t, index):
+        """Compile a transition and work out which variables to enumerate.
 
         Args:
-            patterns (list): Pattern trees.
+            t (dict): The transition record, modified in place.
+            index (dict): Place gid to index.
 
-        Returns:
-            set: Variable names.
+        Raises:
+            UnsupportedNet: When something will not compile, when the
+                transition has no input arc, or when a free variable has no
+                finite colour set to range over.
         """
-        out = set()
+        where = f"{t['page']}/{t['name']}"
+        guard = self.compile_guard(t["guard_text"])
+        t["guard"] = guard[0] if guard else None
+        guard_trees = guard[1] if guard else []
 
-        def walk(p):
-            if p[0] == "var":
-                out.add(p[1])
-            elif p[0] == "tuple":
-                for q in p[1]:
-                    walk(q)
+        t["in"] = [(index[g], _name_wildcards(parse_pattern_multiset(e), where))
+                   for g, e in t["in_raw"]]
+        out_trees = []
+        compiled_out = []
+        for g, e in t["out_raw"]:
+            terms, trees = self.compile_output(e)
+            compiled_out.append((index[g], terms))
+            out_trees.extend(trees)
+        t["out"] = compiled_out
 
-        for p in patterns:
-            walk(p)
-        return out
+        if not t["in"]:
+            raise UnsupportedNet(f"{where} has no input arc "
+                                 "(it would be enabled forever)")
 
-    # Method to build the initial marking, optionally with another sample.
-    def initial_marking(self, sample=None, places=None) -> tuple:
+        bound = set()
+        for _pidx, terms in t["in"]:
+            for _count, pattern in terms:
+                bound |= pattern_variables(pattern)
+        t["in_vars"] = bound
+
+        needs: Dict[int, int] = collections.Counter()
+        flat = []
+        for pidx, terms in t["in"]:
+            for count, pattern in terms:
+                needs[pidx] += count
+                flat.extend([(pidx, pattern)] * count)
+        t["needs"] = dict(needs)
+        t["flat_in"] = flat
+
+        used = set()
+        for tree in guard_trees + out_trees:
+            try:
+                used |= free_variables(tree)
+            except MLError as exc:
+                raise UnsupportedNet(f"{where}: {exc}")
+        free = sorted(used - bound - set(self.env))
+        domains = []
+        for name in free:
+            values = self.declarations.domain_of(name)
+            if values is None:
+                declared = self.declarations.variables.get(name)
+                reason = (f"its colour set {declared} is not finite"
+                          if declared else "it is not declared")
+                raise UnsupportedNet(
+                    f"{where}: the variable {name!r} is not bound by an input "
+                    f"arc and cannot be enumerated because {reason}")
+            domains.append((name, values))
+        t["free_vars"] = free
+        t["domains"] = domains
+
+    # Method to build the initial marking, optionally with another input.
+    def initial_marking(self, token=None, places=None) -> tuple:
         """Assemble the initial marking from the places' initial inscriptions.
 
-        With ``places`` the caller says which places carry the input, and
-        ``sample`` is used as the token verbatim -- that is the general form.
-        Without it a place named ``Input`` on the top page is replaced and the
-        sample is coerced to a record of reals, which is what the tree nets
-        want; that fallback is domain knowledge and is on its way out (see
-        ``MIGRATION.md``).
-
         Args:
-            sample (optional): The token for the input places, or the record
-                values when ``places`` is omitted.
+            token (optional): A value to put in ``places`` instead of what
+                they declare, so the same net can be explored for another
+                input.
             places (sequence, optional): Indices of the places to overwrite.
+                Which places carry the input is the caller's to say; the net
+                itself does not distinguish them.
 
         Returns:
             tuple: The initial marking, one sorted token tuple per place.
+
+        Raises:
+            UnsupportedNet: When an initial marking cannot be evaluated.
         """
-        override = None if places is None else set(places)
+        override = set(places or ())
         marking = []
         for i, pl in enumerate(self.places):
-            tokens = parse_initial_marking(pl["initmark"])
-            if sample is not None:
-                if override is not None:
-                    if i in override:
-                        tokens = [_canon(sample)]
-                elif pl["name"] == "Input" and pl["page"] == self.top["name"]:
-                    tokens = [tuple(float(v) for v in sample)]
+            if token is not None and i in override:
+                tokens = [_canon(token)]
+            else:
+                tokens = self.parse_initial_marking(pl["initmark"])
             marking.append(tuple(sorted(tokens)))
         return tuple(marking)
+
+    # Method to evaluate a place's initial marking.
+    def parse_initial_marking(self, text: Optional[str]) -> List[Any]:
+        """Evaluate a place's initial-marking inscription.
+
+        Args:
+            text (str, optional): The inscription, possibly empty.
+
+        Returns:
+            list: The tokens.
+
+        Raises:
+            UnsupportedNet: When the inscription cannot be evaluated.
+        """
+        text = (text or "").strip()
+        if not text:
+            return []
+        terms, _trees = self.compile_output(text)
+        tokens: List[Any] = []
+        for count, value in terms:
+            number = count if isinstance(count, int) else count({})
+            try:
+                tokens.extend([_canon(value({}))] * int(number))
+            except MLError as exc:
+                raise UnsupportedNet(f"initial marking {text!r}: {exc}")
+        return tokens
 
     # Method to list every enabled binding element of a marking.
     def enabled(self, marking: tuple) -> List[Tuple[int, Tuple, dict]]:
@@ -560,7 +429,7 @@ class ColouredNet:
         found = []
         for ti in sorted(candidates):
             t = self.transitions[ti]
-            if any(not marking[p] for p, _ in t["in"]):
+            if any(len(marking[p]) < n for p, n in t["needs"].items()):
                 continue
             for env in self._bindings(marking, t):
                 key = tuple(sorted(env.items()))
@@ -571,35 +440,58 @@ class ColouredNet:
     def _bindings(self, marking, t) -> List[dict]:
         """Enumerate the bindings of a transition, honouring its guard.
 
+        Input patterns are matched against the tokens available; variables no
+        input arc binds are then run through their colour sets, which is how
+        CPN Tools finds the rest of the binding elements.
+
         Args:
             marking (tuple): The marking.
             t (dict): The transition record.
 
         Returns:
             list: Distinct complete bindings.
+
+        Raises:
+            UnsupportedNet: When the guard cannot be evaluated, or when the
+                transition has more binding elements than the budget allows.
         """
         results, seen = [], set()
-        inputs = t["in"]
+        inputs = t["flat_in"]
+        guard = t["guard"]
+        domains = t["domains"]
+
+        def accept(env):
+            if guard is not None:
+                try:
+                    if not guard(env):
+                        return
+                except MLError as exc:
+                    raise UnsupportedNet(f"{t['name']}: guard: {exc}")
+                except Exception as exc:                       # noqa: BLE001
+                    raise UnsupportedNet(f"{t['name']}: guard could not be "
+                                         f"evaluated ({exc})")
+            key = tuple(sorted(env.items()))
+            if key not in seen:
+                seen.add(key)
+                results.append(env)
+                if len(results) > MAX_BINDINGS:
+                    raise UnsupportedNet(
+                        f"{t['name']} has more than {MAX_BINDINGS} binding "
+                        "elements in one marking")
+
+        def complete(env):
+            if not domains:
+                accept(env)
+                return
+            names = [name for name, _values in domains]
+            for combination in itertools.product(*[v for _n, v in domains]):
+                extended = dict(env)
+                extended.update(zip(names, combination))
+                accept(extended)
 
         def rec(i, env, used):
             if i == len(inputs):
-                if t["guard"] is not None:
-                    scope = dict(self.env)
-                    scope.update(env)
-                    try:
-                        ok = eval(t["guard"], scope)  # noqa: S307
-                    except NameError as exc:
-                        raise UnsupportedNet(f"{t['name']}: guard uses an unbound "
-                                             f"variable ({exc})")
-                    except Exception as exc:
-                        raise UnsupportedNet(f"{t['name']}: guard could not be "
-                                             f"evaluated ({exc})")
-                    if not ok:
-                        return
-                key = tuple(sorted(env.items()))
-                if key not in seen:
-                    seen.add(key)
-                    results.append(env)
+                complete(env)
                 return
             pidx, pattern = inputs[i]
             available = collections.Counter(marking[pidx])
@@ -607,7 +499,7 @@ class ColouredNet:
             for token in sorted(set(marking[pidx])):
                 if available[token] <= 0:
                     continue
-                env2 = _match(pattern, token, env)
+                env2 = match_pattern(pattern, token, env, self.fields)
                 if env2 is None:
                     continue
                 used2 = {k: collections.Counter(v) for k, v in used.items()}
@@ -632,6 +524,9 @@ class ColouredNet:
 
         Returns:
             tuple: The marking where the run stopped.
+
+        Raises:
+            UnsupportedNet: When no dead marking is reached within the limit.
         """
         m = self.initial if marking is None else marking
         for _ in range(limit):
@@ -653,19 +548,83 @@ class ColouredNet:
 
         Returns:
             tuple: The successor marking.
+
+        Raises:
+            UnsupportedNet: When an output inscription cannot be evaluated.
         """
         t = self.transitions[ti]
         new = [list(tokens) for tokens in marking]
-        for pidx, pattern in t["in"]:
+        for pidx, pattern in t["flat_in"]:
             new[pidx].remove(_instantiate(pattern, env))
-        scope = dict(self.env)
-        scope.update(env)
         for pidx, terms in t["out"]:
             for count, code in terms:
                 try:
-                    value = _canon(eval(code, scope))  # noqa: S307
-                except NameError as exc:
-                    raise UnsupportedNet(f"{t['name']}: output arc uses an "
-                                         f"unbound variable ({exc})")
-                new[pidx].extend([value] * count)
+                    number = count if isinstance(count, int) else count(env)
+                    value = _canon(code(env))
+                except MLError as exc:
+                    raise UnsupportedNet(f"{t['name']}: output arc: {exc}")
+                except Exception as exc:                       # noqa: BLE001
+                    raise UnsupportedNet(f"{t['name']}: output arc could not "
+                                         f"be evaluated ({exc})")
+                new[pidx].extend([value] * int(number))
         return tuple(tuple(sorted(tokens)) for tokens in new)
+
+
+# Function to give every wildcard of an input arc a name.
+def _name_wildcards(terms, where):
+    """Replace ``_`` in an input pattern with a variable nobody else uses.
+
+    A wildcard on an input arc says "any token", but firing has to know which
+    token was taken, and a binding element has to say so too or it could not
+    be replayed. Naming the wildcard keeps both: the token appears in the
+    binding, under a name the net itself cannot refer to.
+
+    Args:
+        terms (list): ``(count, pattern)`` pairs.
+        where (str): The transition, for the generated names.
+
+    Returns:
+        list: The patterns, with wildcards named.
+    """
+    counter = [0]
+
+    def rename(pattern):
+        tag = pattern[0]
+        if tag == "pwild":
+            counter[0] += 1
+            return ("pvar", f"_any{counter[0]}")
+        if tag in ("ptuple", "plist"):
+            return (tag, [rename(p) for p in pattern[1]])
+        if tag == "pcons":
+            return ("pcons", rename(pattern[1]), rename(pattern[2]))
+        if tag == "precord":
+            return ("precord", [(lab, rename(p)) for lab, p in pattern[1]])
+        return pattern
+
+    return [(count, rename(pattern)) for count, pattern in terms]
+
+
+# Function to rebuild the token a pattern denotes under a complete binding.
+def _instantiate(pattern, env):
+    """Evaluate a pattern back into the token it consumes.
+
+    Args:
+        pattern (tuple): Pattern tree.
+        env (dict): Complete binding.
+
+    Returns:
+        The token value.
+
+    Raises:
+        UnsupportedNet: For a pattern shape that cannot be rebuilt.
+    """
+    tag = pattern[0]
+    if tag == "pvar":
+        return env[pattern[1]]
+    if tag == "plit":
+        return pattern[1]
+    if tag in ("ptuple", "plist"):
+        return tuple(_instantiate(p, env) for p in pattern[1])
+    if tag == "pcons":
+        return (_instantiate(pattern[1], env),) + _instantiate(pattern[2], env)
+    raise UnsupportedNet(f"cannot rebuild the token matched by {tag!r}")

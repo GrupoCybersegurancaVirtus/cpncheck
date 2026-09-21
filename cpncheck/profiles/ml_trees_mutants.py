@@ -43,6 +43,7 @@ from typing import Dict, List, Optional, Tuple
 from ..coloured import ColouredNet
 from ..mutation import CPNDocument, Mutant
 from ..net import CPNNet
+from .ml_trees import detect_family
 from ..statespace import build_state_space
 
 __all__ = ["TREE_MUTANTS", "analyse"]
@@ -65,7 +66,7 @@ def analyse(path: str) -> Dict[str, object]:
     occurring = {ti for out in ss.succ for ti, _k, _w in out}
     trans = cnet.transitions
     top = cnet.top["name"]
-    family = cnet.family
+    family = detect_family(cnet)
     trees: Dict[str, Dict[str, List[str]]] = {}
     for ti, t in enumerate(trans):
         is_leaf = t["page"].startswith("Tree") if family != "Decision Tree" \

@@ -139,16 +139,17 @@ def test_every_catalog_formula_renders_to_askctl():
         assert "val DEAD" in decl and "fun AFmax" in decl
 
 
-def test_the_generated_program_matches_the_hand_written_one():
-    """The AST renderer asks CPN Tools exactly the questions the old generator did.
+def test_the_generated_program_asks_about_every_property():
+    """Every property the checker answers is also asked of CPN Tools.
 
-    Only the keys are compared: the expressions differ in shape (a quantified
-    property folds into one ``AND`` instead of an ML ``List.all``), and the
-    agreement of the *answers* is what ``cpncheck oracle`` establishes.
+    That the two engines then give the same answers is what ``cpncheck
+    oracle`` establishes; see tests/test_oracle.py.
     """
     for path, labels in ((GBDT, [0, 1]), (RF, [0, 1, 2])):
         mc = CPNModelChecker(path, class_labels=labels)
-        assert set(mc.ml_program()[1]) == set(mc._legacy_ml_program()[1])
+        queries = mc.ml_program()[1]
+        assert set(mc.property_ids) <= set(queries)
+        assert set(queries) <= set(mc.check().oracle)
 
 
 def test_askctl_uses_ev_only_for_the_askctl_reading(net):

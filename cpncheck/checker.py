@@ -70,7 +70,8 @@ class CPNModelChecker:
     def __init__(self, path: str, feature_names: Optional[Sequence[str]] = None,
                  class_labels: Optional[Sequence[int]] = None,
                  max_nodes: int = DEFAULT_MAX_NODES,
-                 profile: Optional[Profile] = None):
+                 profile: Optional[Profile] = None,
+                 prelude: Optional[Dict[str, Any]] = None):
         """Parse and flatten a ``.cpn`` file, then resolve its properties.
 
         Args:
@@ -83,13 +84,16 @@ class CPNModelChecker:
                 properties get no verdict.
             profile (Profile, optional): The profile to use; detected from the
                 net when omitted.
+            prelude (dict, optional): Names added to the net's own ML
+                declarations, and winning over them. A net that declares its
+                functions in ML needs none of this.
 
         Raises:
             UnsupportedNet: When no registered profile recognises the net.
         """
         self.path = path
         self.net = CPNNet(path)
-        self.cnet = ColouredNet(self.net)
+        self.cnet = ColouredNet(self.net, prelude=prelude)
         self.profile = profile or detect(self.cnet)
         if self.profile is None:
             raise UnsupportedNet(
@@ -423,119 +427,6 @@ class CPNModelChecker:
                 q[pid] = "Bool.toString (length (ListHomeMarkings ()) > 0)"
         return prog.declarations(), q
 
-    # Method to produce the hand-written ASK-CTL program of the tree profile.
-    def _legacy_ml_program(self) -> Tuple[str,
-                                          "collections.OrderedDict[str, str]"]:
-        """The CPN ML declarations and queries matching :meth:`_evaluate`.
-
-        Every query is a string-valued ML expression, evaluated after entering
-        the state-space tool, calculating the occurrence and SCC graphs and
-        loading ASK-CTL. The keys are those of :attr:`ModelCheckResult.oracle`.
-
-        Returns:
-            tuple: ``(declarations, {key: expression})``.
-        """
-        S = self.structure
-        net = self.cnet
-        top = S.top
-
-        def mark(pidx):
-            p = net.places[pidx]
-            return f"(fn n => size (Mark.{p['page']}'{p['name']} 1 n))"
-
-        def group_fun(name, tis):
-            cases = " | ".join(
-                f"Bind.{net.transitions[ti]['page']}'{net.transitions[ti]['name']} _ "
-                f"=> true" for ti in tis)
-            return f"fun {name} a = case ArcToBE a of {cases} | _ => false;"
-
-        decl: List[str] = []
-        decl.append("val DEAD = NOT(MODAL(TT));")
-        decl.append(f"fun nPred n = size (Mark.{top}'Prediction 1 n);")
-        decl.append('val PRED = NF("predicted", fn n => nPred n > 0);')
-        decl.append("fun AFmax phi = AND(EV(phi), "
-                    "NOT(EXIST_UNTIL(NOT(phi), AND(DEAD, NOT(phi)))));")
-        decl.append("fun enCount isT n = length (List.filter isT (OutArcs n));")
-        decl.append('fun EN isT = NF("enabled", fn n => enCount isT n > 0);')
-        decl.append('fun MK f = NF("marked", fn (n : Node) => (f n : int) > 0);')
-        decl.append("val allMarks = [" + ", ".join(mark(i) for i in
-                                                    range(len(net.places))) + "];")
-        if self.labels is not None:
-            decl.append("val LABELS = [" + ", ".join(str(k) for k in self.labels)
-                        + "];")
-            decl.append(f"fun validLabels n = let val m = Mark.{top}'Prediction 1 n "
-                        "in size m = List.foldl (fn (k, acc) => acc + cf (k, m)) 0 "
-                        "LABELS end;")
-        tree_names = []
-        for i, info in enumerate(S.trees.values()):
-            decl.append(group_fun(f"isLeaf{i}", info["leaves"]))
-            tree_names.append(f"isLeaf{i}")
-        if tree_names:
-            decl.append("val leafGroups = [" + ", ".join(tree_names) + "];")
-            outs = [info["out"] for info in S.trees.values() if info["out"] is not None]
-            decl.append("val treeOuts = [" + ", ".join(mark(p) for p in outs) + "];")
-        if S.channels:
-            pairs = [(a, b) for ch in S.channels.values()
-                     for a, b in zip(ch["acc"], ch["acc"][1:])]
-            decl.append("val accPairs = [" + ", ".join(
-                f"({mark(a)}, {mark(b)})" for a, b in pairs) + "];")
-            scores = [(ch["acc"][-1], ch["score"]) for ch in S.channels.values()
-                      if ch["acc"] and ch["score"] is not None]
-            decl.append("val scorePairs = [" + ", ".join(
-                f"({mark(a)}, {mark(b)})" for a, b in scores) + "];")
-        if S.decides:
-            decl.append(group_fun("isDecide", S.decides))
-        if S.vote:
-            decl.append(group_fun("isVote", S.vote))
-            decl.append("val voteMarks = [" + ", ".join(
-                mark(p) for p in S.vote_socks) + "];")
-
-        def ev(formula):
-            return f"Bool.toString (eval_node ({formula}) InitNode)"
-
-        q: "collections.OrderedDict[str, str]" = collections.OrderedDict()
-        q["nodes"] = "Int.toString (NoOfNodes ())"
-        q["arcs"] = "Int.toString (NoOfArcs ())"
-        q["scc_nodes"] = "Int.toString (SccNoOfNodes ())"
-        q["scc_arcs"] = "Int.toString (SccNoOfArcs ())"
-        q["dead"] = "Int.toString (length (ListDeadMarkings ()))"
-        q["home"] = "Int.toString (length (ListHomeMarkings ()))"
-        q["A1"] = ev("EV(DEAD)")
-        q["A2"] = ev("NOT(POS(AND(DEAD, NOT(PRED))))")
-        q["A3"] = ev("AFmax PRED")
-        q["A3_ev"] = ev("EV(PRED)")
-        q["A4"] = ev("INV(POS(PRED))")
-        q["A5"] = ev('INV(NF("one prediction", fn n => nPred n <= 1))')
-        if self.labels is not None:
-            q["A6"] = ev('INV(NF("valid labels", validLabels))')
-        q["A7"] = ev('INV(NF("safe", fn n => List.all (fn f => f n <= 1) allMarks))')
-        q["A8"] = "Bool.toString (length (ListHomeMarkings ()) > 0)"
-        if tree_names:
-            q["B1"] = ev('INV(NF("leaf determinism", fn n => List.all '
-                         '(fn isT => enCount isT n <= 1) leafGroups))')
-            q["B2"] = ("Bool.toString (List.all (fn isT => eval_node "
-                       "(AFmax (EN isT)) InitNode) leafGroups)")
-            q["B2_ev"] = ("Bool.toString (List.all (fn isT => eval_node "
-                          "(EV (EN isT)) InitNode) leafGroups)")
-            q["B3"] = ev('INV(NF("tree outputs", fn n => List.all '
-                         '(fn f => f n <= 1) treeOuts))')
-        if S.channels:
-            q["C1"] = ("Bool.toString (List.all (fn (a, b) => eval_node "
-                       "(NOT(EXIST_UNTIL(NOT(MK a), MK b))) InitNode) accPairs)")
-            q["C2"] = ("Bool.toString (List.all (fn (a, b) => eval_node "
-                       "(NOT(EXIST_UNTIL(NOT(MK a), MK b))) InitNode) scorePairs)")
-        if S.decides:
-            q["C3a"] = ev("AFmax (EN isDecide)")
-            q["C3a_ev"] = ev("EV (EN isDecide)")
-            q["C3b"] = ev('INV(NF("one decision", fn n => enCount isDecide n <= 1))')
-        if S.vote:
-            q["D1"] = ev('INV(OR(NOT(EN isVote), NF("all votes", fn n => '
-                         'List.all (fn f => f n > 0) voteMarks)))')
-            q["D2a"] = ev("AFmax (EN isVote)")
-            q["D2a_ev"] = ev("EV (EN isVote)")
-            q["D2b"] = ev('INV(NF("one aggregation", fn n => nPred n <= 1))')
-        return "\n".join(decl), q
-
     # Method to write the ASK-CTL script matching this model for CPN Tools.
     def export_askctl(self, filepath: str) -> str:
         """Write a CPN Tools script that asks every question of :meth:`check`.
@@ -594,7 +485,8 @@ def check_cpn(path: str, samples=None, classifier=None,
               class_labels: Optional[Sequence[int]] = None,
               use_final: bool = True, test_samples=None,
               max_nodes: int = DEFAULT_MAX_NODES,
-              verbose: bool = False) -> ModelCheckResult:
+              verbose: bool = False, profile=None,
+              prelude: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -607,12 +499,15 @@ def check_cpn(path: str, samples=None, classifier=None,
         test_samples: Inputs for conformance testing.
         max_nodes (int): Occurrence-graph budget.
         verbose (bool): Print progress.
+        profile (Profile, optional): The profile to use.
+        prelude (dict, optional): Names added to the net's ML declarations.
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
     """
     checker = CPNModelChecker(path, feature_names=feature_names,
-                              class_labels=class_labels, max_nodes=max_nodes)
+                              class_labels=class_labels, max_nodes=max_nodes,
+                              profile=profile, prelude=prelude)
     return checker.check(samples=samples, classifier=classifier,
                          use_final=use_final, test_samples=test_samples,
                          verbose=verbose)

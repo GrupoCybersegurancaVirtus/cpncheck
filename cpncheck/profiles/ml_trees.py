@@ -28,6 +28,7 @@ a page with ``Finalize``      a boosting class channel: places ``Acc<m>`` are
 import collections
 import re
 import time
+import weakref
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..coloured import ColouredNet
@@ -42,7 +43,33 @@ from ..result import PropertyResult
 from ..structural import overlapping_guards
 from ..selectors import Explicit, Group, Places, Transitions
 
-__all__ = ["TREE_CATALOG", "TreeStructure", "MLTreeProfile"]
+__all__ = ["TREE_CATALOG", "TreeStructure", "MLTreeProfile",
+           "detect_family"]
+
+
+# Function to identify which kind of model a net was generated from.
+def detect_family(net) -> str:
+    """Name the model family from the shape of the top page.
+
+    A decision tree has no subpages; a forest has one per tree, named
+    ``Tree_...``; boosting has one per class channel. This is a naming
+    convention of pyruleanalyzer's exporter and belongs to this profile, not
+    to the parser.
+
+    Args:
+        net (ColouredNet): The flattened net.
+
+    Returns:
+        str: ``Decision Tree``, ``Random Forest`` or
+        ``Gradient Boosting Decision Trees``.
+    """
+    top = net.net.top_page()
+    subst = [tr for tr in top["transitions"].values() if tr["subpage"]]
+    if not subst:
+        return "Decision Tree"
+    if all(tr["name"].startswith("Tree_") for tr in subst):
+        return "Random Forest"
+    return "Gradient Boosting Decision Trees"
 
 
 # Function to render a sample record compactly.
@@ -92,7 +119,8 @@ class TreeStructure:
         self.trees: "collections.OrderedDict[str, dict]" = collections.OrderedDict()
         for ti, t in enumerate(trans):
             page = t["page"]
-            is_leaf = (page.startswith("Tree") if cnet.family != "Decision Tree"
+            is_leaf = (page.startswith("Tree")
+                       if detect_family(cnet) != "Decision Tree"
                        else page == top)
             if not is_leaf:
                 continue
@@ -211,8 +239,14 @@ class MLTreeProfile(Profile):
 
     # Method to build the profile.
     def __init__(self):
-        """Create the profile with an empty structure cache."""
-        self._cache: Dict[int, "TreeStructure"] = {}
+        """Create the profile with an empty structure cache.
+
+        The cache is weak-keyed: a profile is registered once and outlives
+        every net it is asked about, and keying by ``id`` would hand a later
+        net the structure of an earlier one that happened to be collected
+        from the same address.
+        """
+        self._cache: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
     # Method to decide whether this profile recognises a net.
     def matches(self, net) -> bool:
@@ -238,7 +272,7 @@ class MLTreeProfile(Profile):
         Returns:
             str: ``Decision Tree``, ``Random Forest`` or the boosting family.
         """
-        return net.family
+        return detect_family(net)
 
     # Method to derive and cache the structure of a net.
     def structure(self, net) -> "TreeStructure":
@@ -250,10 +284,10 @@ class MLTreeProfile(Profile):
         Returns:
             TreeStructure: The structure.
         """
-        key = id(net)
-        if key not in self._cache:
-            self._cache[key] = TreeStructure(net)
-        return self._cache[key]
+        structure = self._cache.get(net)
+        if structure is None:
+            structure = self._cache[net] = TreeStructure(net)
+        return structure
 
     # Method to resolve every group the formulas quantify over.
     def resolve_groups(self, net):
@@ -559,13 +593,13 @@ class MLTreeProfile(Profile):
             except (TypeError, ValueError):
                 pass
         trans = net.transitions
-        if net.family == "Gradient Boosting Decision Trees":
+        if detect_family(net) == "Gradient Boosting Decision Trees":
             ks = [int(trans[ti]["name"].rsplit("_", 1)[-1])
                   for ti in structure.decides
                   if trans[ti]["name"].rsplit("_", 1)[-1].isdigit()]
             if ks:
                 return sorted(ks), "Decide transitions"
-        if net.family == "Random Forest":
+        if detect_family(net) == "Random Forest":
             for info in structure.trees.values():
                 for ti in info["leaves"]:
                     for _p, terms in trans[ti]["out"]:

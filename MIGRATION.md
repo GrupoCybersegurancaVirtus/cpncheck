@@ -13,16 +13,20 @@ CPNCheck was extracted from `pyruleanalyzer`.
 * **Step 6 — done.** Counterexamples are objects: bindings and markings along
   the trace, lassos for the liveness properties, a witness input for guard
   overlap, and `replay()` as a certificate.
+* **Step 3 — done.** The generated ASK-CTL was checked against CPN Tools on 28
+  nets, and the hand-written generator deleted.
+* **Step 5 — done.** A real CPN ML parser, colour sets, binding enumeration,
+  and a net that declares its own functions.
 
 `pyruleanalyzer` is **not yet modified** and does not depend on CPNCheck; it
-still carries its own copy. Nothing there breaks until step 7 below is done
+still carries its own copy. Nothing there breaks until step 7 below -- the only one left -- is done
 deliberately.
 
 ## 1. The modules
 
 | CPNCheck module | Origin | What it does |
 |---|---|---|
-| `cpncheck/net.py` | `cpn_semantics.py` 27–225 | parse the `.cpn` XML |
+| `cpncheck/net.py` | `cpn_semantics.py` 27–225 | parse the `.cpn` XML, and nothing else |
 | `cpncheck/coloured.py` | `cpn_statespace.py` 48–674 | the CPN ML fragment; flatten; fire |
 | `cpncheck/statespace.py` | `cpn_statespace.py` 676–893 | occurrence graph, SCCs |
 | `cpncheck/ctl.py` | `model_checker.py` 528–628 | the CTL fixpoints |
@@ -33,6 +37,8 @@ deliberately.
 | `cpncheck/structural.py` | **step 4**, from `model_checker.py` | guard boxes: what holds for every input |
 | `cpncheck/conformance.py` | **step 4**, from `model_checker.py` | run to a dead marking, compare with a reference |
 | `cpncheck/counterexample.py` | **new (step 6)** | the evidence a violated property hands back |
+| `cpncheck/cpnml.py` | **new (step 5)** | lexer, parser and compiler for CPN ML |
+| `cpncheck/colourset.py` | **new (step 5)** | colour sets, their domains, and a net's declarations |
 | `cpncheck/profiles/ml_trees.py` | **phase 2**, from `model_checker.py` | the tree nets: structure, catalog, formulas |
 | `cpncheck/profiles/ml_trees_mutants.py` | **step 4**, from `cpn_mutants.py` | the sixteen tree mutation operators |
 | `cpncheck/properties.py` | `model_checker.py` 115–239 | the property descriptors; no catalog of its own |
@@ -122,47 +128,57 @@ the property descriptors. What a profile now supplies, all of it optional:
 | `mutation_operators` / `analyse_for_mutation` | the faults that must be caught |
 | `catalog` | the descriptors verdicts are reported under |
 
-What remains in the generic layer, and is the subject of step 5:
+Nothing domain-specific remains in the generic layer. Step 5 removed the last
+of it:
 
-| Where | What |
+* `net.py` is a parser and only a parser — the SML-to-Python translator and the
+  four methods that knew about trees and samples are gone, and it is 97 lines
+  where it was 221.
+* `ColouredNet` no longer knows what a model family is, nor that a place called
+  `Input` is special. Which places carry the input is the caller's to say, via
+  `initial_marking(token, places=...)`.
+* The evaluation environment is no longer a hardcoded `vadd`/`argmax`/`decide`.
+  Those come from the net's own `<ml>` declarations, which the parser now
+  reads; `detect_family` moved to the tree profile.
+
+## 4. What is understood of CPN ML, and what is not
+
+`cpncheck/cpnml.py` is a lexer, a precedence-climbing parser and a compiler to
+Python closures. What it covers:
+
+| | |
 |---|---|
-| `coloured.py` `ColouredNet.__init__` | `self.family = net.family()`, and the evaluation environment injects `vadd`, `vsum`, `argmax`, `allzero`, `decide` |
-| `coloured.py` `initial_marking` | takes `places=`; the name-based `Input` fallback is kept for callers that do not pass it |
-| `net.py` | `family`, `sample_from_initial_marking`, `leaf_outputs`, `eval_subpage` |
+| expressions | `if`/`then`/`else`, `let`/`in`/`end`, `case`/`of`, `fn`, application |
+| operators | the SML table, with precedence and associativity: `orelse`, `andalso`, the comparisons, `::`, `@`, `+ - ^`, `* / div mod`, unary `~` and `not` |
+| values | integers, reals (including `~` and `E~`), strings, booleans, unit, tuples, lists, records, multisets |
+| patterns | variables, wildcards, literals, tuples, lists, `::`, records, type annotations |
+| declarations | `val` and `fun`, including multi-clause functions and recursion |
+| colour sets | `unit`, `bool`, `int`, `real`, `string`, `enum`, `index`, `product`, `record`, `list`, `subset`, `alias`, read from the XML |
+| binding | variables no input arc binds, enumerated over a finite colour set |
 
-### Step 5 — a pluggable ML prelude
-
-`vadd`/`vsum`/`argmax`/`decide` become functions a profile registers, and
-ideally are read from the net's own `<ml>` block. That is the same parser work
-as §4, so the two land together.
-
-## 4. What is missing for arbitrary `.cpn` files
-
-The supported CPN ML fragment is narrow. Everything outside it raises
-`UnsupportedNet` rather than being mis-read, which is the right failure mode,
-but a net drawn by hand in CPN Tools will usually be rejected.
+What is not covered, and raises `UnsupportedNet` rather than being guessed at:
 
 | Missing | Why it matters | Effort |
 |---|---|---|
-| `if` / `case` / `let` / `fn` / `val` / `fun` / `div` / `mod` — rejected outright in `coloured.py` `sml_expr_to_python` | ubiquitous in real nets | high: needs a real CPN ML parser |
-| Colour sets are not interpreted at all — tokens are untyped Python values | no type checking, and no domain to enumerate | high |
-| Variables not bound by an input arc (binding enumerated from the colour set) | this is *the* binding mechanism of CPN Tools | high |
-| User-declared `fun` in the `<ml>` block | falls out of the parser work | medium |
-| Multiset on an **input** arc (`1\`x ++ 1\`y`); `parse_pattern` takes a single pattern | common | medium |
-| Fusion sets (only port/socket fusion is handled) | common | low |
-| Timed nets (`@+`, timestamps) | common | medium/high |
+| Timed nets (`@+`, timestamps) | common in protocol models | medium/high |
+| Fusion sets beyond port/socket fusion | common | low |
+| User-declared datatypes and their constructors | common | medium |
+| `ref`, exceptions, `while` | rare in a net | low, and rarely worth it |
+| An input arc with a variable coefficient (`n\`x`) | rare; it is a constraint to solve, not a pattern to match | medium |
+
+A free variable over an infinite colour set is refused by name: it is the one
+case where carrying on would silently check a smaller net than the one on
+screen.
 
 ## 5. Open items
 
-* **The ASK-CTL script changed shape.** It is now generated from the formula
-  tree, so a quantified property folds into one `AND` instead of an ML
-  `List.all`, and `AF` always goes through `AFmax`. The queries are
-  semantically the same and the *keys* are asserted equal to the hand-written
-  generator's in `tests/test_generic.py`, but **the agreement of the answers
-  has not been re-confirmed against CPN Tools** — run `cpncheck oracle` on a
-  machine with the engine installed before relying on it. The old generator is
-  kept as `CPNModelChecker._legacy_ml_program` until that is done, and should
-  be deleted afterwards.
+* **The ASK-CTL agreement is measured.** 28 nets — `gbdt_binary` and
+  `rf_multiclass`, correct and every mutant — agree with CPN Tools on every
+  statistic and every verdict, including 81 *false* ones. That was confirmed
+  both for the AST-generated script and again after the CPN ML engine was
+  replaced, so neither change moved a verdict. `_legacy_ml_program` is gone.
+  `tests/test_oracle.py` keeps a fast subset, skipped unless
+  `CPNCHECK_CPNTOOLS=1`.
 * **Names moved in step 4.** `PROPERTY_CATALOG` is now
   `cpncheck.profiles.ml_trees.TREE_CATALOG`, `MUTANTS` is
   `cpncheck.profiles.ml_trees_mutants.TREE_MUTANTS`, and `AF_PROPERTIES` is
@@ -190,11 +206,11 @@ but a net drawn by hand in CPN Tools will usually be rejected.
 
 1. ~~Mechanical extraction, package, CLI, tests.~~ **done**
 2. ~~Selectors, formulas as data, profiles, one AST with two backends.~~ **done**
-3. Re-confirm the ASK-CTL agreement with CPN Tools, then delete
-   `_legacy_ml_program`.
+3. ~~Re-confirm the ASK-CTL agreement with CPN Tools, then delete
+   `_legacy_ml_program`.~~ **done**
 4. ~~Generalise the structural and conformance techniques, the mutation
    operators and the catalog.~~ **done**
-5. Pluggable ML prelude; widen the CPN ML fragment (§3 step 5, §4).
+5. ~~Pluggable ML prelude; widen the CPN ML fragment.~~ **done**
 6. ~~**Counterexamples** — structured objects, bindings and markings along the
    trace, lasso witnesses for the `AF` properties, a witness point for guard
    overlap, `replay()` as a certificate.~~ **done**
