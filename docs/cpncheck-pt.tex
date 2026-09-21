@@ -1,0 +1,1287 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds}
+
+\geometry{left=3cm,right=2.7cm,top=2.8cm,bottom=2.8cm}
+
+\definecolor{codebg}{RGB}{247,247,245}
+\definecolor{codekw}{RGB}{20,70,140}
+\definecolor{codecom}{RGB}{110,110,110}
+\definecolor{codestr}{RGB}{140,60,20}
+\definecolor{rule}{RGB}{190,190,185}
+\definecolor{callout}{RGB}{242,244,248}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecom}\itshape,
+  stringstyle=\color{codestr},
+  showstringspaces=false,
+  breaklines=true,
+  frame=leftline,
+  framerule=1.2pt,
+  rulecolor=\color{rule},
+  xleftmargin=10pt,
+  framexleftmargin=8pt,
+  framexrightmargin=4pt,
+  aboveskip=10pt,
+  belowskip=10pt,
+  literate=%
+    {á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+    {â}{{\^a}}1 {ê}{{\^e}}1 {ô}{{\^o}}1 {ã}{{\~a}}1 {õ}{{\~o}}1
+    {ç}{{\c c}}1 {à}{{\`a}}1
+}
+
+\newcommand{\cpn}{\textsc{CPNCheck}}
+\newcommand{\pyra}{\textsc{pyRuleAnalyzer}}
+\newcommand{\cpntools}{CPN~Tools}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\newenvironment{nota}
+  {\par\vspace{6pt}\noindent\begin{tikzpicture}\node[fill=callout,rounded corners=2pt,
+   inner sep=9pt,text width=\dimexpr\linewidth-20pt\relax,align=justify]\bgroup\small}
+  {\egroup;\end{tikzpicture}\par\vspace{6pt}}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{\vspace{-1.5cm}\Huge\normalfont\scshape CPNCheck\upshape\\[6pt]
+\Large Model checking de Redes de Petri Coloridas\\[4pt]
+\large fundamentos, implementação e por que confiar no resultado}
+\author{Documentação técnica}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\vspace{1cm}
+\begin{center}
+\begin{minipage}{0.82\textwidth}
+\small
+\noindent\textbf{Sobre este documento.} Ele começa do zero: o que é model
+checking, para que serve, e por que a resposta que ele dá é diferente da
+resposta que um teste dá. Depois desce até a implementação do \cpn{} módulo
+por módulo, e termina com a parte que mais importa para quem vai defender um
+resultado --- o que exatamente está garantido, o que não está, e quais
+evidências sustentam cada afirmação.
+
+\vspace{6pt}
+\noindent Não é preciso conhecer lógica temporal nem Redes de Petri para
+começar. Os capítulos~\ref{cap:mc} e~\ref{cap:cpn} constroem os dois conceitos
+do início.
+\end{minipage}
+\end{center}
+
+\vfill
+\begin{center}
+\small
+\url{https://github.com/GrupoCybersegurancaVirtus/cpncheck}
+\end{center}
+
+\clearpage
+\tableofcontents
+\clearpage
+
+% ============================================================================
+\chapter{O problema}
+% ============================================================================
+
+\section{Um teste responde uma pergunta menor do que parece}
+
+Suponha que você exportou um modelo de \emph{machine learning} --- uma árvore
+de decisão, uma floresta aleatória, um \emph{gradient boosting} --- para uma
+Rede de Petri Colorida, e quer ter certeza de que a rede se comporta bem. A
+primeira coisa que ocorre é testar: rodar a rede com mil entradas e conferir
+mil saídas.
+
+Isso é valioso, mas responde a uma pergunta estreita: \emph{``para estas mil
+entradas, a rede deu a resposta certa?''}. Não responde:
+
+\begin{itemize}
+  \item a rede sempre \emph{para}, ou existe entrada que a faz girar para
+        sempre?
+  \item existe algum estado em que ela trava sem produzir resposta?
+  \item existem duas folhas da mesma árvore que podem estar habilitadas ao
+        mesmo tempo --- ou seja, a rede é realmente determinística?
+  \item existe alguma execução em que o resultado é depositado duas vezes?
+\end{itemize}
+
+Nenhuma dessas perguntas é sobre uma entrada específica. Todas são sobre
+\emph{todos os comportamentos possíveis} do modelo. Teste é amostragem:
+executa alguns caminhos e conclui por indução informal. Model checking é
+exaustão: enumera \emph{todos} os estados alcançáveis e decide a pergunta
+sobre o conjunto inteiro.
+
+\begin{nota}
+\textbf{A distinção que vale memorizar.} Um teste que passa diz ``não
+encontrei problema nestes casos''. Um model checker que responde ``verdadeiro''
+diz ``não existe problema, ponto'' --- dentro do modelo e do escopo que ele
+explorou, que é exatamente o que este documento vai tornar preciso.
+\end{nota}
+
+\section{O que é preciso para verificar}
+
+Model checking precisa de três coisas, e a qualidade da resposta depende das
+três:
+
+\begin{enumerate}
+  \item \textbf{Um modelo formal} do sistema --- aqui, a Rede de Petri
+        Colorida lida do arquivo \code{.cpn};
+  \item \textbf{Uma propriedade formal}, escrita numa lógica com significado
+        matemático preciso --- aqui, CTL;
+  \item \textbf{Um algoritmo} que decide se o modelo satisfaz a propriedade,
+        e que, quando não satisfaz, exibe \emph{por quê}.
+\end{enumerate}
+
+O terceiro ponto é o que separa model checking de uma prova de teorema comum:
+quando a resposta é ``falso'', a ferramenta devolve um \textbf{contraexemplo}
+--- uma execução concreta que viola a propriedade. É a diferença entre um
+médico dizer ``algo está errado'' e apontar exatamente onde.
+
+% ============================================================================
+\chapter{Model checking do começo}
+\label{cap:mc}
+% ============================================================================
+
+\section{O modelo: sistemas de transição}
+
+Tudo em model checking parte de um objeto simples. Um \textbf{sistema de
+transição} (ou \emph{estrutura de Kripke}) é uma quádrupla
+\[
+  K = (S,\ s_0,\ R,\ L)
+\]
+onde:
+
+\begin{itemize}
+  \item $S$ é um conjunto de \textbf{estados};
+  \item $s_0 \in S$ é o \textbf{estado inicial};
+  \item $R \subseteq S \times S$ é a \textbf{relação de transição}: $(s,s')
+        \in R$ significa ``de $s$ o sistema pode ir para $s'$'';
+  \item $L$ rotula cada estado com as \textbf{proposições atômicas} que valem
+        nele --- fatos elementares como ``o place \emph{Prediction} tem token''.
+\end{itemize}
+
+Um \textbf{caminho} é uma sequência $s_0 \to s_1 \to s_2 \to \cdots$ seguindo
+$R$. Um caminho é \textbf{maximal} quando não pode ser estendido: ou é
+infinito, ou termina num estado sem sucessores.
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=16mm and 20mm,
+  st/.style={circle,draw,minimum size=8mm,inner sep=1pt,font=\small},
+  every edge/.style={draw,-{Stealth[length=2mm]}}]
+  \node[st,label=below:{\footnotesize inicial}] (a) {$s_0$};
+  \node[st,right=of a] (b) {$s_1$};
+  \node[st,right=of b] (c) {$s_2$};
+  \node[st,above right=8mm and 20mm of b] (d) {$s_3$};
+  \node[st,right=of c,fill=black!8] (e) {$s_4$};
+  \draw (a) edge (b);
+  \draw (b) edge (c);
+  \draw (b) edge (d);
+  \draw (c) edge (e);
+  \draw (d) edge[bend left=10] (e);
+  \node[below=1mm of e,font=\footnotesize] {sem sucessores};
+\end{tikzpicture}
+\end{center}
+
+Nesse exemplo há dois caminhos maximais: $s_0 s_1 s_2 s_4$ e $s_0 s_1 s_3 s_4$.
+Ambos terminam --- $s_4$ é o que chamaremos de \emph{marcação morta}.
+
+\section{A propriedade: lógica temporal CTL}
+
+\textbf{CTL} (\emph{Computation Tree Logic}) descreve como proposições se
+comportam \emph{ao longo do tempo} e \emph{ao longo dos caminhos possíveis}.
+Cada operador CTL é a combinação de duas escolhas:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Quantificador de caminho} & \textbf{Operador temporal} \\
+\midrule
+\textbf{A} --- em \emph{todos} os caminhos & \textbf{X} --- no próximo estado \\
+\textbf{E} --- em \emph{algum} caminho     & \textbf{F} --- em \emph{algum} estado futuro \\
+                                            & \textbf{G} --- em \emph{todos} os estados futuros \\
+                                            & \textbf{U} --- até que \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Combinando, obtêm-se os operadores usados na prática. Esta é a tabela mais
+importante do documento:
+
+\begin{center}
+\begin{tabular}{@{}llp{7.6cm}@{}}
+\toprule
+\textbf{Fórmula} & \textbf{Nome} & \textbf{Leitura} \\
+\midrule
+$AG\,\varphi$ & invariante, segurança
+  & $\varphi$ vale em \emph{toda} marcação alcançável. ``Nada de ruim acontece.'' \\[4pt]
+$AF\,\varphi$ & inevitabilidade, vivacidade
+  & \emph{toda} execução maximal chega a um estado onde $\varphi$ vale. ``Algo de bom acontece, sempre.'' \\[4pt]
+$EF\,\varphi$ & alcançabilidade
+  & \emph{existe} execução que chega a $\varphi$. ``É possível chegar lá.'' \\[4pt]
+$E[\varphi\ U\ \psi]$ & até que (existencial)
+  & existe execução em que $\varphi$ vale continuamente até que $\psi$ passe a valer. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Por que essas quatro bastam}
+
+As demais se derivam. Em particular:
+\[
+  \neg EF\,\varphi \;\equiv\; AG\,\neg\varphi,
+  \qquad
+  \neg E[\varphi\ U\ \psi] \;=\; \text{``$\psi$ nunca acontece antes de $\varphi$''}
+\]
+
+A segunda é a forma das propriedades de \textbf{precedência}: ``o estágio $m$
+nunca é concluído antes do estágio $m{-}1$''. Guarde essa leitura; ela
+reaparece no catálogo (propriedades C1 e C2).
+
+\subsection*{Segurança e vivacidade são diferentes na prática}
+
+A distinção não é acadêmica, e ela determina como é o contraexemplo:
+
+\begin{itemize}
+  \item Um \textbf{invariante} ($AG$) é violado por \emph{um único estado ruim}.
+        O contraexemplo é finito: a sequência mais curta do início até esse
+        estado.
+  \item Uma \textbf{vivacidade} ($AF$) é violada por \emph{uma execução
+        inteira} que nunca chega ao objetivo. Se essa execução for infinita,
+        \emph{não existe contraexemplo finito} --- a menos que se exiba a
+        parte que se repete. Essa é a forma \emph{laço} (\emph{lasso}), e o
+        capítulo~\ref{cap:cex} mostra como o \cpn{} a produz.
+\end{itemize}
+
+\section{O algoritmo: pontos fixos}
+
+CTL é decidida sem enumerar caminhos --- o que seria inviável, já que há
+infinitos. Em vez disso, calcula-se para cada fórmula $\varphi$ o
+\textbf{conjunto de satisfação} $\mathrm{Sat}(\varphi) \subseteq S$: os estados
+onde ela vale. A resposta final é simplesmente $s_0 \in \mathrm{Sat}(\varphi)$.
+
+Os conjuntos são calculados por \textbf{pontos fixos}, de dentro para fora:
+
+\paragraph{$EF$ e $E[\,U\,]$: alcançabilidade para trás.}
+$\mathrm{Sat}(EF\,\varphi)$ é o menor conjunto que contém
+$\mathrm{Sat}(\varphi)$ e é fechado por predecessores. Algoritmo: parta dos
+estados onde $\varphi$ vale e caminhe \emph{para trás} pelas arestas até
+saturar.
+
+\paragraph{$AF$: ``todo sucessor já está''.}
+$\mathrm{Sat}(AF\,\varphi)$ é o menor conjunto $Z$ tal que
+$Z = \mathrm{Sat}(\varphi) \cup \{s : \text{todo sucessor de } s \text{ está em } Z\}$.
+Implementa-se com um contador por estado: quando o último sucessor de $s$ entra
+no conjunto, $s$ entra também.
+
+\paragraph{$AG$: o complemento de uma alcançabilidade.}
+$AG\,\varphi$ vale em $s$ exatamente quando \emph{nenhum} estado alcançável a
+partir de $s$ viola $\varphi$. Então: calcule os estados ruins, calcule quem
+alcança um estado ruim (para trás), e tome o complemento.
+
+\begin{nota}
+\textbf{Custo.} Cada operador custa uma varredura do grafo, então o total é
+$O(|\varphi| \times (|S| + |R|))$ --- \emph{linear} no tamanho do grafo. O
+gargalo nunca é a lógica; é o tamanho de $S$.
+\end{nota}
+
+\section{O ponto delicado: marcações mortas}
+\label{sec:dead}
+
+CTL de livro-texto assume que a relação $R$ é \textbf{total}: todo estado tem
+ao menos um sucessor, e portanto todo caminho é infinito. Mas os modelos aqui
+são feitos para \emph{parar}: a rede classifica a entrada e termina numa
+\textbf{marcação morta} (nenhuma transição habilitada).
+
+Isso obriga a decidir o que $AF\,\varphi$ significa num caminho que acaba.
+Existem duas convenções, e elas dão respostas \emph{diferentes}:
+
+\begin{center}
+\begin{tabular}{@{}p{3.3cm}p{10.2cm}@{}}
+\toprule
+\textbf{Convenção} & \textbf{O que diz numa marcação morta sem $\varphi$} \\
+\midrule
+\textbf{livro-texto}
+  & A marcação morta ganha um laço sobre si mesma (Baier \& Katoen, seção 3.1).
+    O caminho vira infinito, nunca alcança $\varphi$, e portanto
+    \textbf{falsifica} $AF\,\varphi$. \\[5pt]
+\textbf{ASK-CTL} (\cpntools)
+  & O \code{EV} do ASK-CTL é \emph{vacuamente verdadeiro} numa marcação sem
+    sucessores. Assim \code{EV($\varphi$)} significa na verdade
+    $AF(\varphi \vee \mathit{morta})$: uma rede que trava antes de decidir
+    \textbf{satisfaz} \code{EV(PRED)}. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A diferença aparece exatamente quando existe uma marcação morta alcançável sem
+$\varphi$ --- ou seja, no caso em que você mais quer ser avisado.
+
+\begin{nota}
+\textbf{Como o \cpn{} resolve.} Ele adota a leitura de livro-texto (mais
+severa) e, ao gerar o script para o \cpntools{}, codifica $AF\,\varphi$ como
+\[
+  \texttt{EV}(\varphi)\ \wedge\ \neg\,\texttt{E}[\neg\varphi\ \texttt{U}\ (\mathit{morta} \wedge \neg\varphi)]
+\]
+para que o \cpntools{} responda à \emph{mesma} pergunta. Além disso, reporta
+as duas leituras (chaves \code{A3\_ev}, \code{B2\_ev}, \code{C3a\_ev},
+\code{D2a\_ev}), de modo que a diferença fique visível em vez de escondida.
+\end{nota}
+
+\section{O limite real: explosão de estados}
+
+O número de estados cresce exponencialmente com o paralelismo do modelo. Para
+os modelos de \emph{gradient boosting} gerados pelo \pyra{}, com $K$ classes e
+$M$ estágios por classe, o grafo de ocorrências tem exatamente
+\[
+  (3M+3)^K + 2 \ \text{nós} \qquad\text{e}\qquad K(3M+2)(3M+3)^{K-1} + 2 \ \text{arcos},
+\]
+porque os canais de classe intercalam livremente. Um modelo de três classes com
+cem estágios está fora do alcance de qualquer ferramenta explícita --- inclusive
+o \cpntools{}.
+
+Isso não é defeito da implementação; é a natureza do problema. O que uma
+ferramenta honesta faz é \textbf{recusar-se a responder} quando não terminou a
+exploração, e é o que o \cpn{} faz: acima do orçamento (\code{max\_nodes},
+200.000 por padrão) as propriedades de espaço de estados ficam \emph{sem
+veredicto}, enquanto a análise estrutural e o teste de conformidade continuam
+valendo.
+
+% ============================================================================
+\chapter{Redes de Petri Coloridas}
+\label{cap:cpn}
+% ============================================================================
+
+\section{Rede de Petri}
+
+Uma Rede de Petri tem dois tipos de nó:
+
+\begin{itemize}
+  \item \textbf{Lugares} (\emph{places}), desenhados como elipses, que guardam
+        \textbf{fichas} (\emph{tokens});
+  \item \textbf{Transições} (\emph{transitions}), desenhadas como retângulos,
+        que consomem fichas de alguns lugares e produzem em outros.
+\end{itemize}
+
+Os \textbf{arcos} ligam lugares a transições e vice-versa. O estado do sistema
+é a \textbf{marcação}: quantas fichas há em cada lugar. Uma transição está
+\textbf{habilitada} quando há fichas suficientes nos lugares de entrada;
+quando \textbf{dispara}, consome-as e produz as de saída.
+
+\begin{center}
+\begin{tikzpicture}[
+  pl/.style={ellipse,draw,minimum width=17mm,minimum height=8mm,font=\small},
+  tr/.style={rectangle,draw,fill=black!6,minimum width=6mm,minimum height=12mm,font=\small},
+  every edge/.style={draw,-{Stealth[length=2mm]}},
+  node distance=14mm]
+  \node[pl,label=above:{\footnotesize $\bullet$}] (p1) {Entrada};
+  \node[tr,right=of p1] (t) {$t$};
+  \node[pl,right=of t] (p2) {Saída};
+  \draw (p1) edge (t);
+  \draw (t) edge (p2);
+  \node[below=6mm of t,font=\footnotesize,align=center]
+    {guarda: \code{[\#f0 x <= 3.0]}};
+\end{tikzpicture}
+\end{center}
+
+\section{O que ``colorida'' acrescenta}
+
+Numa Rede de Petri comum as fichas são indistinguíveis. Numa
+\textbf{Rede de Petri Colorida} (CPN) cada ficha carrega um \textbf{valor} ---
+uma ``cor''. Isso traz quatro elementos:
+
+\begin{description}
+  \item[Conjuntos de cores (\emph{colour sets}).] O tipo dos valores:
+        \code{INT}, \code{REAL}, \code{BOOL}, produtos, registros, listas. No
+        modelo de uma floresta, por exemplo, \code{SAMPLE} é um registro de
+        seis reais.
+  \item[Variáveis.] Declaradas com um conjunto de cores:
+        \code{var x: SAMPLE;}
+  \item[Inscrições de arco.] Expressões em CPN ML. No arco de entrada é um
+        \emph{padrão} que casa com a ficha; no de saída é uma expressão que
+        constrói a ficha produzida.
+  \item[Guardas.] Condições booleanas na transição, como
+        \code{[\#f0 x <= 3.0 andalso \#f1 x > 1.5]}.
+\end{description}
+
+\subsection*{Elementos de ligação}
+
+Aqui está o conceito que mais confunde e que o \cpn{} trata explicitamente.
+Uma transição por si só não é uma ação: uma ação é um \textbf{elemento de
+ligação} (\emph{binding element}) --- a transição \emph{mais} uma atribuição
+de valores às suas variáveis.
+
+As variáveis ganham valor de dois modos:
+
+\begin{enumerate}
+  \item \textbf{Por casamento de padrão}: a variável aparece num arco de
+        entrada, e seu valor vem da ficha consumida.
+  \item \textbf{Por enumeração sobre o conjunto de cores}: a variável aparece
+        só na guarda ou num arco de saída. Nesse caso o \cpntools{} percorre
+        \emph{todos} os valores do conjunto de cores dela.
+\end{enumerate}
+
+O segundo caso é fácil de esquecer e caro de ignorar: uma ferramenta que não
+o implementa está analisando uma rede \emph{menor} do que a desenhada --- e
+não avisa. O \cpn{} implementa a enumeração e, quando o conjunto de cores é
+infinito (um \code{REAL}, por exemplo), \textbf{recusa a rede nomeando a
+variável} em vez de seguir em frente.
+
+\section{Hierarquia}
+
+Redes grandes se organizam em \textbf{páginas}. Uma \emph{transição de
+substituição} não dispara: ela representa uma subpágina inteira. Os lugares da
+página de cima (\emph{sockets}) são fundidos com os lugares de borda da
+subpágina (\emph{ports}).
+
+Nos modelos gerados pelo \pyra{}: a página de topo tem \code{Input} e
+\code{Prediction}; cada árvore ou canal de classe é uma subpágina.
+
+Para verificar, o \cpn{} \textbf{achata} a hierarquia: funde cada par
+port/socket num único lugar e produz uma rede plana equivalente. Nada se perde
+--- a hierarquia é organização visual, não semântica.
+
+\section{O grafo de ocorrências}
+
+Aqui os dois capítulos se encontram. O \textbf{grafo de ocorrências}
+(\emph{occurrence graph}, ou espaço de estados) de uma CPN é construído assim:
+
+\begin{itemize}
+  \item cada \textbf{nó} é uma marcação alcançável;
+  \item cada \textbf{arco} é a ocorrência de um elemento de ligação.
+\end{itemize}
+
+\textbf{Esse grafo é exatamente a estrutura de Kripke do capítulo~\ref{cap:mc}.}
+As marcações são os estados $S$, as ocorrências são a relação $R$, a marcação
+inicial é $s_0$, e as proposições atômicas são fatos sobre as fichas (``o lugar
+\emph{Prediction} tem ao menos uma ficha''). Por isso CTL se aplica diretamente.
+
+Uma sutileza importante: as marcações carregam os \textbf{valores reais} das
+fichas. Não há abstração. Duas marcações que diferem no valor de uma única
+ficha são \emph{dois nós distintos}. Isso torna a verificação exata para a
+entrada dada, e é também por isso que a verificação é feita \emph{por entrada}
+--- ponto ao qual voltaremos na seção~\ref{sec:escopo}.
+
+\section{Três conceitos derivados do grafo}
+
+\begin{description}
+  \item[Marcação morta.] Nó sem sucessores: a rede parou. Numa rede correta,
+        toda marcação morta contém uma predição.
+  \item[Componente fortemente conexa (SCC).] Conjunto maximal de nós
+        mutuamente alcançáveis. A decomposição em SCCs (algoritmo de Tarjan)
+        revela ciclos.
+  \item[\emph{Home marking}.] Marcação alcançável a partir de \emph{qualquer}
+        marcação alcançável. Existe exatamente quando o grafo de SCCs tem uma
+        \emph{única} componente terminal (Jensen \& Kristensen). É o que o
+        \code{ListHomeMarkings} do \cpntools{} calcula.
+\end{description}
+
+% ============================================================================
+\chapter{Para que serve isso num modelo de \emph{machine learning}}
+% ============================================================================
+
+\section{O que se está verificando --- e o que não se está}
+\label{sec:escopo}
+
+Vale ser muito claro, porque é aqui que se cometem exageros.
+
+\begin{nota}
+O \cpn{} verifica a \textbf{rede exportada}, lida de volta do arquivo
+\code{.cpn}. Ele \textbf{não} verifica que o modelo de ML é acurado, justo,
+robusto a ataque adversarial ou adequado ao problema. Ele verifica que o
+\emph{artefato formal} que você vai publicar, embarcar ou citar se comporta
+como um classificador deve se comportar --- e que ele computa a mesma coisa
+que o classificador de origem nas entradas testadas.
+\end{nota}
+
+Dito isso, as garantias obtidas são reais e não-triviais:
+
+\begin{itemize}
+  \item \textbf{Determinismo.} Duas folhas da mesma árvore nunca estão
+        habilitadas simultaneamente --- a árvore não é ambígua.
+  \item \textbf{Terminação.} A rede sempre para; não existe ciclo alcançável.
+  \item \textbf{Ausência de travamento.} Toda parada é uma parada \emph{com
+        resposta}.
+  \item \textbf{Saída única e válida.} Nunca duas predições; nunca um rótulo
+        fora do domínio declarado.
+  \item \textbf{Disjunção das guardas.} As folhas de uma árvore particionam o
+        espaço de entrada --- e esta vale para \emph{toda} entrada, não só as
+        exploradas.
+  \item \textbf{Conformidade.} Nas entradas testadas, a rede prediz o mesmo
+        que o classificador.
+\end{itemize}
+
+\section{A escada de escopo}
+
+As quatro técnicas do \cpn{} têm alcances \emph{diferentes}, e confundir isso
+é o erro mais fácil de cometer ao relatar resultados:
+
+\begin{center}
+\begin{tabular}{@{}llp{7.2cm}@{}}
+\toprule
+\textbf{Técnica} & \textbf{Escopo} & \textbf{Um veredicto ``verdadeiro'' significa} \\
+\midrule
+\code{ctl} & uma entrada
+  & Para \emph{esta} marcação inicial, a propriedade vale em todos os
+    comportamentos possíveis. Outra entrada é outro grafo. \\[4pt]
+\code{scc} & uma entrada
+  & Idem; é uma pergunta sobre a estrutura do mesmo grafo. \\[4pt]
+\code{structural} & \textbf{toda} entrada
+  & Vale para o espaço de entrada inteiro, sem explorar nada. É o veredicto
+    mais forte que a ferramenta produz. \\[4pt]
+\code{testing} & as entradas dadas
+  & Equivalência funcional nas entradas fornecidas. É teste, não prova. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{Como relatar sem exagerar.} ``As propriedades A1--A8 e B1--B3 foram
+verificadas para $n$ entradas do conjunto de teste; B4 (disjunção de guardas)
+vale para todo o espaço de entrada; PC foi testada em $N$ amostras.'' Isso é
+exato. Dizer ``o modelo foi formalmente verificado'' sem qualificação não é.
+\end{nota}
+
+% ============================================================================
+\chapter{\cpn{} por dentro}
+% ============================================================================
+
+\section{Arquitetura}
+
+O \cpn{} tem cerca de 9.000 linhas de Python e \textbf{nenhuma dependência de
+terceiros} --- só a biblioteca padrão. As camadas vão do arquivo até o
+veredicto:
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={rectangle,draw,rounded corners=2pt,text width=74mm,
+              inner xsep=3mm,inner ysep=1.7mm,font=\small,fill=black!3,
+              align=left},
+  side/.style={rectangle,draw,rounded corners=2pt,text width=38mm,
+               inner xsep=2mm,inner ysep=1.7mm,font=\small,fill=black!8,
+               align=center},
+  lbl/.style={font=\scriptsize\itshape,text=black!55,text width=38mm,
+              align=center},
+  node distance=2.6mm]
+  \node[box] (net) {\code{net.py} \hfill lê o XML do \cpntools{}};
+  \node[box,below=of net] (ml) {\code{cpnml.py} \hfill lexer, parser, compilador};
+  \node[box,below=of ml] (cs) {\code{colourset.py} \hfill cores e domínios};
+  \node[box,below=of cs] (col) {\code{coloured.py} \hfill achata, liga, dispara};
+  \node[box,below=of col] (ss) {\code{statespace.py} \hfill grafo, SCCs};
+  \node[box,below=of ss] (ctl) {\code{ctl.py} \hfill pontos fixos CTL};
+  \node[box,below=of ctl] (f) {\code{formula.py} \hfill fórmulas como dados};
+  \node[box,below=of f] (ch) {\code{checker.py} \hfill orquestra e reporta};
+
+  \node[side,right=14mm of col] (ask) {\code{askctl.py}};
+  \node[lbl,above=1.5mm of ask] {a mesma fórmula,\\para o \cpntools{}};
+
+  \node[side,right=14mm of f] (prof) {\code{profile.py}\\[1pt]\code{profiles/}};
+  \node[lbl,below=1.5mm of prof] {o que o chamador sabe\\sobre \emph{suas} redes};
+
+  \draw[-{Stealth[length=2mm]}] (prof.west) -- (f.east);
+  \draw[-{Stealth[length=2mm]},rounded corners=3pt]
+        (f.east) -- ++(6mm,0) -- ++(0,26mm) -- (ask.south);
+\end{tikzpicture}
+\end{center}
+
+\section{Camada por camada}
+
+\subsection{\code{net.py} --- ler o arquivo}
+
+Faz \emph{só} o \emph{parsing} do XML que o \cpntools{} grava: páginas,
+lugares com suas marcações iniciais, transições com guardas, arcos com
+inscrições, transições de substituição com seus pares port/socket.
+
+São 96 linhas, e não sabem nada sobre o que a rede significa. Isso é
+deliberado: a mesma leitura serve para qualquer rede.
+
+\subsection{\code{cpnml.py} --- entender as expressões}
+
+Guardas e inscrições são escritas em \textbf{CPN ML}, um subconjunto de
+Standard ML. Uma versão anterior as traduzia com expressões regulares --- o
+que funciona para o que um gerador emite e falha para o que uma pessoa
+escreve.
+
+Hoje é um \emph{parser} de verdade: analisador léxico, analisador sintático por
+escalada de precedência, e um compilador que transforma a árvore sintática em
+\emph{closures} Python. Cobre:
+
+\begin{center}
+\begin{tabular}{@{}lp{9.6cm}@{}}
+\toprule
+expressões & \code{if/then/else}, \code{let/in/end}, \code{case/of}, \code{fn}, aplicação de função \\
+operadores & a tabela do SML com precedência e associatividade: \code{orelse}, \code{andalso}, comparações, \code{::}, \code{@}, \code{+ - \^{}}, \code{* / div mod}, \code{\~{}} e \code{not} unários \\
+valores & inteiros, reais (inclusive \code{\~{}} e \code{E\~{}}), strings, booleanos, unit, tuplas, listas, registros, \emph{multisets} \\
+padrões & variáveis, curinga, literais, tuplas, listas, \code{::}, registros, anotações de tipo \\
+declarações & \code{val} e \code{fun}, incluindo funções multi-cláusula e recursão \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{Consequência que vale destacar: a rede se auto-descreve.} As funções
+\code{vadd}, \code{vsum}, \code{argmax}, \code{allzero} e \code{decide} usadas
+pelos modelos de floresta \emph{não} são funções Python embutidas no
+verificador. Elas são lidas dos blocos \code{<ml>} do próprio arquivo
+\code{.cpn}, compiladas e executadas. Nada sobre votação suave ou
+\emph{boosting} está dentro da ferramenta.
+\end{nota}
+
+A compilação para \emph{closures} (em vez de interpretação nó a nó) mantém o
+disparo rápido: a árvore é percorrida uma única vez, na compilação.
+
+\subsection{\code{colourset.py} --- os domínios}
+
+Lê os conjuntos de cores e as variáveis dos elementos XML estruturados
+(\code{<color>}, \code{<var>}) e decide quais são \emph{finitos}:
+
+\begin{center}
+\begin{tabular}{@{}lp{10.2cm}@{}}
+\toprule
+\textbf{Finitos} & \code{unit}, \code{bool}, enumerações, faixas de índice, inteiros com limites, e produtos/registros/subconjuntos/\emph{aliases} construídos a partir desses \\
+\textbf{Infinitos} & \code{int} sem limites, \code{real}, \code{string}, listas \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Um domínio infinito é reportado como ``desconhecido'', nunca chutado.
+
+\subsection{\code{coloured.py} --- a rede que dispara}
+
+Achata a hierarquia (fundindo ports e sockets), compila cada guarda e
+inscrição, e implementa as duas operações centrais:
+
+\begin{description}
+  \item[\code{enabled(marcação)}] enumera os elementos de ligação habilitados:
+        casa os padrões dos arcos de entrada contra as fichas disponíveis e,
+        em seguida, percorre os domínios das variáveis livres.
+  \item[\code{fire(marcação, transição, ligação)}] calcula a marcação sucessora:
+        remove as fichas consumidas, avalia as inscrições de saída, deposita
+        as produzidas.
+\end{description}
+
+As fichas são valores Python escolhidos para serem \emph{hasheáveis e
+ordenáveis}: registro é tupla na ordem dos campos declarados, lista é tupla,
+\emph{unit} é a tupla vazia. Assim duas marcações são o mesmo nó exatamente
+quando são iguais --- o que é o que permite usar um dicionário para
+reconhecer marcações já visitadas.
+
+\subsection{\code{statespace.py} --- o grafo}
+
+Busca em largura a partir da marcação inicial, com orçamento de nós. Para cada
+nó guarda o \emph{pai} na árvore de busca --- incluindo a \textbf{ligação}
+usada, sem a qual um traço não poderia ser redisparado. Em seguida, decomposição
+em SCCs por Tarjan iterativo, de onde saem as componentes terminais e os
+\emph{home markings}.
+
+\subsection{\code{ctl.py} --- os pontos fixos}
+
+Três funções, exatamente as do capítulo~\ref{cap:mc}:
+
+\begin{center}
+\begin{tabular}{@{}lp{9.4cm}@{}}
+\toprule
+\code{\_eu} & $E[\varphi\ U\ \psi]$ por alcançabilidade para trás \\
+\code{\_af} & $AF\,\varphi$ por contagem de sucessores, com o parâmetro
+              \code{semantics} escolhendo entre a leitura de livro-texto e a do
+              ASK-CTL (seção~\ref{sec:dead}) \\
+\code{\_af\_lasso} & extrai o \emph{laço} quando $AF$ falha numa execução
+              infinita (capítulo~\ref{cap:cex}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{\code{formula.py} --- propriedades como dados}
+
+Este é o módulo que dá flexibilidade à ferramenta. Uma propriedade não é código
+Python escrito contra uma rede específica; é uma \emph{árvore de objetos}:
+
+\begin{center}
+\begin{tabular}{@{}lp{9.2cm}@{}}
+\toprule
+\textbf{Proposições atômicas} & \code{Dead}, \code{Marked}, \code{AllMarked}, \code{MaxTokens}, \code{TokensIn}, \code{Enabled}, \code{EnabledCount} \\
+\textbf{Conectivos} & \code{Not}, \code{And}, \code{Or}, \code{Implies} \\
+\textbf{Temporais} & \code{AG}, \code{AF}, \code{EF}, \code{EU} \\
+\textbf{Quantificador} & \code{ForEach} --- ``para toda árvore\ldots'', ``para todo canal\ldots'' \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Cada fórmula faz duas coisas além de ser verdadeira ou falsa:
+
+\begin{enumerate}
+  \item \textbf{explica-se} quando falha --- o \code{AG} devolve a sequência
+        mais curta até a marcação violadora e pergunta ao operando \emph{por
+        que aquela marcação é ruim};
+  \item \textbf{renderiza-se em ASK-CTL} --- a \emph{mesma} árvore vira a
+        consulta para o \cpntools{}.
+\end{enumerate}
+
+\begin{nota}
+\textbf{Por que isso importa para a confiança.} Antes, a verificação em Python
+e o script ASK-CTL eram escritos à mão, lado a lado. Nada além de cuidado
+impedia que divergissem --- e uma divergência silenciosa significaria comparar
+respostas para perguntas diferentes. Hoje há uma única árvore e dois
+\emph{backends}, e a divergência é impossível por construção.
+\end{nota}
+
+\subsection{\code{profile.py} e \code{profiles/} --- onde entra o domínio}
+
+O verificador não sabe que existe um lugar chamado \code{Prediction}. Quem
+sabe é o \textbf{perfil}, que responde:
+
+\begin{center}
+\begin{tabular}{@{}lp{8.2cm}@{}}
+\toprule
+\code{matches} / \code{family} & esta rede é uma das minhas, e como eu a chamo \\
+\code{resolve\_groups} & os domínios que o \code{ForEach} percorre \\
+\code{ctl\_formulas} & as propriedades temporais, como fórmulas \\
+\code{scc\_properties} & as respondidas pela decomposição em SCCs \\
+\code{static\_checks} & vereditos que dispensam grafo de ocorrências \\
+\code{conformance} & comparação com uma implementação de referência \\
+\code{label\_domain} & os valores de saída admissíveis \\
+\code{as\_input\_token} / \code{input\_places} & como outra entrada entra na rede \\
+\code{mutation\_operators} & as falhas que as propriedades devem pegar \\
+\code{unavailable} & propriedades que a rede tem mas esta execução não decide \\
+\code{catalog} & os descritores sob os quais os vereditos são reportados \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+O perfil \code{ml\_trees} é o exemplo completo: ele reconhece as redes do
+\pyra{} e declara as vinte propriedades do catálogo.
+
+\begin{nota}
+\textbf{A distinção entre ``não se aplica'' e ``não pôde ser decidida''} foi
+um defeito real encontrado tarde. Uma propriedade que a rede simplesmente não
+tem (agregação numa rede que não agrega) é omitida e nunca mencionada --- certo.
+Mas uma propriedade que a rede \emph{tem} e que não pôde ser decidida (o
+domínio de rótulos de uma árvore de decisão, que não está escrito em lugar
+algum legível) estava sendo omitida também --- o que se lê como se tivesse
+passado. Hoje ela é reportada como \code{SKIP} com o motivo.
+\end{nota}
+
+\section{As quatro técnicas}
+
+\begin{center}
+\begin{tabular}{@{}lp{10.4cm}@{}}
+\toprule
+\code{ctl}
+  & Model checking explícito sobre o grafo de ocorrências. Valores reais de
+    ficha, sem abstração. \\[4pt]
+\code{scc}
+  & \emph{Home markings} pela decomposição em componentes fortemente conexas.
+    Não é uma fórmula CTL. \\[4pt]
+\code{structural}
+  & Análise das guardas que são conjunções de limites. Uma guarda
+    \code{\#f0 x <= 3.0 andalso \#f1 x > 1.5} descreve uma \emph{caixa}; duas
+    guardas podem valer juntas exatamente quando as caixas se intersectam.
+    Vale para \emph{toda} entrada. \\[4pt]
+\code{testing}
+  & Conformidade com uma implementação de referência nas entradas dadas. Segue
+    uma sequência maximal por entrada, o que é barato o bastante para um
+    conjunto de teste inteiro. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+A técnica \code{testing} só é significativa \emph{ao lado} do model checking,
+nunca no lugar dele: ela segue \emph{uma} execução maximal por entrada, e que
+essa execução dê ``o'' resultado da rede depende de confluência --- que é
+justamente o que as propriedades de determinismo estabelecem.
+\end{nota}
+
+\section{Exatidão da análise estrutural}
+
+Um detalhe que mudou durante o desenvolvimento e que vale registrar, porque é
+um caso de resposta errada dada em silêncio.
+
+A versão original tratava os extremos fechados como se fossem abertos,
+mapeando $\ge$ em $>$ e $<$ em $\le$, e testava a sobreposição com
+$\max(\text{inferiores}) < \min(\text{superiores})$.
+
+Considere então as guardas $x \ge 3$ e $x \le 3$, que compartilham o ponto
+$x = 3$. O teste dava $3 < 3$, ou seja \emph{disjuntas} --- um
+\textbf{falso negativo}, que é exatamente o erro que importa: dizer ``não há
+sobreposição'' quando há.
+
+A versão atual rastreia se cada extremo é aberto ou fechado e decide
+exatamente:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+$y \ge 3$ \ \emph{vs} \ $y \le 3$ & sobrepõem em $\{3\}$ & \checkmark \\
+$y > 3$   \ \emph{vs} \ $y \le 3$ & disjuntas            & \checkmark \\
+$y \ge 3$ \ \emph{vs} \ $y < 3$   & disjuntas            & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Nenhum veredicto sobre as redes geradas mudou --- o exportador só emite
+\code{<=} e \code{>}, onde as duas versões concordam. Mas para uma rede escrita
+à mão era uma resposta errada esperando para acontecer.
+
+\section{O catálogo de propriedades}
+
+As vinte propriedades das redes do \pyra{}. Note a coluna \emph{Técnica}: ela
+determina o escopo do veredicto, conforme a seção~\ref{sec:escopo}.
+
+\begin{center}
+\footnotesize
+\begin{longtable}{@{}llp{5.6cm}l@{}}
+\toprule
+\textbf{ID} & \textbf{Propriedade} & \textbf{Fórmula} & \textbf{Técnica} \\
+\midrule
+\endhead
+\multicolumn{4}{@{}l}{\textit{Comuns às três famílias}}\\[2pt]
+A1  & Terminação                  & $AF\ \mathit{morta}$                              & ctl \\
+A2  & Sem travamento espúrio      & $\neg EF(\mathit{morta} \wedge \neg \mathit{pred})$ & ctl \\
+A3  & Decisão inevitável          & $AF\ \mathit{pred}$                               & ctl \\
+A4  & Predição recuperável        & $AG\ EF\ \mathit{pred}$                           & ctl \\
+A5  & Saída única                 & $AG\ |\mathit{Prediction}| \le 1$                 & ctl \\
+A6  & Rótulo válido               & $AG\ \mathit{Prediction} \subseteq L$             & ctl \\
+A7  & Segurança (\emph{safeness}) & $AG\ \forall p:\ |p| \le 1$                       & ctl \\
+A8  & \emph{Home marking}         & uma única componente terminal                     & scc \\[4pt]
+\multicolumn{4}{@{}l}{\textit{Por árvore}}\\[2pt]
+B1  & Determinismo de folha       & $\forall T:\ AG\ |EN(\mathit{folhas}_T)| \le 1$   & ctl \\
+B2  & Seleção de folha inevitável & $\forall T:\ AF\ EN(\mathit{folhas}_T)$           & ctl \\
+B3  & Saída única por árvore      & $\forall T:\ AG\ |\mathit{out}_T| \le 1$          & ctl \\
+B4  & Disjunção das guardas       & $\forall T, i \ne j:\ \mathit{caixa}_i \cap \mathit{caixa}_j = \emptyset$ & \textbf{structural} \\[4pt]
+\multicolumn{4}{@{}l}{\textit{Gradient boosting}}\\[2pt]
+C1  & Precedência de estágio      & $\forall m:\ \neg E[\neg \mathit{acc}_{m-1}\ U\ \mathit{acc}_m]$ & ctl \\
+C2  & Sem escore prematuro        & $\neg E[\neg \mathit{acc}_M\ U\ \mathit{score}]$ & ctl \\
+C3a & Disparo de decisão inevitável & $AF\ EN(\mathit{decide})$                       & ctl \\
+C3b & Determinismo da decisão     & $AG\ |EN(\mathit{decide})| \le 1$                 & ctl \\[4pt]
+\multicolumn{4}{@{}l}{\textit{Floresta aleatória}}\\[2pt]
+D1  & Voto completo               & $AG(EN(\mathit{vote}) \rightarrow \mathit{todos\ votaram})$ & ctl \\
+D2a & Agregação inevitável        & $AF\ EN(\mathit{vote})$                           & ctl \\
+D2b & Agregação única             & $AG\ |\mathit{Prediction}| \le 1$                 & ctl \\[4pt]
+\multicolumn{4}{@{}l}{\textit{Conformidade}}\\[2pt]
+PC  & Consistência da predição    & $\mathit{rede}(x) = \mathit{modelo}(x)$           & \textbf{testing} \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\noindent onde $EN(G)$ vale numa marcação com arco de saída cuja transição está
+em $G$, e $|EN(G)|$ conta esses arcos. As propriedades C1 e C2 são
+quantificadas também sobre os canais de classe $k$, omitido acima por
+brevidade: $\mathit{acc}_m$ é o acumulador do estágio $m$ do canal, e $M$ é o
+último estágio.
+
+% ============================================================================
+\chapter{Contraexemplos}
+\label{cap:cex}
+% ============================================================================
+
+\section{Por que um veredicto sozinho não basta}
+
+``A propriedade A3 é falsa'' é uma informação pobre. Ela não diz se o problema
+é do modelo, da exportação ou da propriedade; não permite reproduzir; não
+permite corrigir. Um model checker sério devolve a \textbf{evidência}.
+
+No \cpn{} o objeto \code{Counterexample} carrega a sequência de ocorrências,
+a \textbf{ligação de cada passo}, a marcação final e a \textbf{entrada} que a
+violação exige.
+
+\section{As cinco formas}
+
+\begin{center}
+\begin{tabular}{@{}lp{10.2cm}@{}}
+\toprule
+\code{finite}
+  & Uma propriedade de segurança falhou: existe marcação alcançável que a
+    viola, e o prefixo é a sequência mais curta até ela. \\[4pt]
+\code{lasso}
+  & Uma propriedade de vivacidade falhou numa execução infinita: um prefixo
+    até um ciclo que a rede pode repetir para sempre sem nunca chegar ao
+    objetivo. \textbf{Sem o ciclo, este caso não tem testemunha finita
+    alguma.} \\[4pt]
+\code{witness}
+  & Uma falha que não é uma sequência --- por exemplo, duas componentes
+    terminais sem sucessor comum. \\[4pt]
+\code{structural}
+  & Um defeito da rede como escrita, independente de execução: duas guardas
+    que podem valer juntas. Carrega um \emph{ponto} do espaço de entrada onde
+    isso acontece. \\[4pt]
+\code{conformance}
+  & A rede e a referência discordam numa entrada concreta. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{O laço, e por que ele precisou de um algoritmo}
+
+Quando $AF\,\varphi$ falha, há dois motivos possíveis:
+
+\begin{enumerate}
+  \item a execução \emph{para} antes de $\varphi$ --- e então o contraexemplo é
+        um caminho finito até uma marcação morta fora de $\varphi$;
+  \item a execução \emph{continua para sempre} sem alcançar $\varphi$.
+\end{enumerate}
+
+No segundo caso não existe caminho finito que sirva de prova. A versão anterior
+da ferramenta apenas informava ``existe um ciclo alcançável que evita
+\ldots'', sem nada para examinar.
+
+O algoritmo \code{\_af\_lasso} extrai o ciclo, e é correto por construção. O
+argumento:
+
+\begin{nota}
+Seja $S$ o conjunto dos nós que \emph{não} satisfazem $AF\,\varphi$. Nenhum
+nó de $S$ satisfaz $\varphi$. Além disso, todo nó de $S$ que tem sucessores
+tem \emph{um sucessor em $S$} --- pois se todos os sucessores satisfizessem
+$AF\,\varphi$, o próprio nó satisfaria. Logo, uma caminhada a partir da
+marcação inicial dentro de $S$ só pode parar numa marcação morta. Quando
+nenhuma marcação morta de $S$ é alcançável --- que é exatamente o caso em que
+a busca por caminho finito não achou nada --- a caminhada \textbf{tem} de
+repetir um nó, e a repetição é o ciclo.
+\end{nota}
+
+Na prática o traço sai assim:
+
+\begin{lstlisting}[language={}]
+A3  [lasso] a predicao nunca acontece
+    sequence: Distribute<x = (-1.36, -1.91, ...)>
+              -> Init<x = (...)>
+              -> Feed_1<sc = -0.043, x = (...)>
+              then forever [GBDT1T1_Rule2_Class1<x = (...)>]
+    cycle_length: 1
+\end{lstlisting}
+
+\section{O certificado: \code{replay()}}
+
+Esta é a parte que sustenta a confiança na ferramenta.
+
+Um contraexemplo é uma sequência finita de elementos de ligação. O método
+\code{replay()} \textbf{redispara} essa sequência a partir da marcação inicial
+usando a \emph{regra de disparo da rede} --- não a busca que produziu o traço
+--- e confere que ela termina onde o contraexemplo afirma. Para um laço,
+confere também que o ciclo retorna ao ponto de entrada.
+
+\begin{nota}
+\textbf{Por que isso é forte.} A busca (pontos fixos, BFS, Tarjan) e a regra de
+disparo são código independente. Um erro nos pontos fixos \emph{não consegue
+forjar} um traço que redispara. Um contraexemplo que passa no \code{replay()}
+é um contraexemplo que a ferramenta não inventou.
+
+A suíte de testes exige que \emph{toda} sequência de \emph{todo} mutante
+redispare --- e exige que uma sequência adulterada (invertida ou truncada)
+\textbf{não} redispare. Sem esse segundo teste, o certificado não certificaria
+nada.
+\end{nota}
+
+\section{De achado estrutural para entrada concreta}
+
+A disjunção de guardas (B4) vale ou falha para \emph{toda} entrada, então uma
+falha não nomeia execução nenhuma. Mas a interseção de duas guardas em caixa é
+uma caixa, e um ponto dela é uma \textbf{entrada} onde a sobreposição de fato
+acontece.
+
+O \cpn{} calcula esse ponto e o devolve como \code{cex.input}. Realimentando-o:
+
+\begin{lstlisting}[language=Python]
+resultado = check_cpn("modelo.cpn", class_labels=[0, 1])
+# B4 FAIL  |  B1 PASS   (a entrada original nao alcanca o par)
+
+x = resultado.properties["B4"].cex.input     # (1.31, 0, 0, 1.117, 0, 0)
+
+de_novo = check_cpn("modelo.cpn", samples=[x], class_labels=[0, 1])
+# B4 FAIL  |  B1 FAIL   -- e no MESMO par de folhas
+\end{lstlisting}
+
+Isso fecha o ciclo entre a prova estrutural (toda entrada) e a prova de estado
+(uma entrada): o achado deixa de ser uma afirmação e passa a ser
+\emph{reprodutível}. É a ideia de refinamento guiado por contraexemplo
+(CEGIS) aplicada aqui.
+
+% ============================================================================
+\chapter{Por que confiar no resultado}
+% ============================================================================
+
+\section{O problema de fundo}
+
+Um verificador é um programa, e programas têm defeitos. Como saber que um
+``VERIFIED'' não é apenas um \emph{bug} que responde ``verdadeiro'' para tudo?
+
+Duas evidências independentes sustentam a resposta, e é importante que sejam
+\emph{duas}, porque cada uma sozinha é insuficiente.
+
+\section{Primeira evidência: sensibilidade (mutantes)}
+
+De uma rede correta, o \cpn{} deriva \textbf{dezesseis} redes defeituosas ---
+cada uma uma pequena edição de guarda, inscrição ou arco, escolhida para
+quebrar \emph{exatamente} uma propriedade nomeada:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}llp{7.0cm}@{}}
+\toprule
+\textbf{Mutante} & \textbf{Deve falhar} & \textbf{Edição} \\
+\midrule
+\code{cycle}          & A1      & folha viva devolve a ficha de entrada \\
+\code{deadlock}       & A2, A3  & produtor da predição perde o arco de saída \\
+\code{dead\_branch}   & A4, A8  & folha dormente sempre habilitada, sem produzir \\
+\code{double\_output} & A5, A7  & predição depositada duas vezes \\
+\code{bad\_label}     & A6      & predição substituída pelo rótulo 7 \\
+\code{overlap}        & B1, B4  & folha dormente habilitada junto com a viva \\
+\code{hidden\_overlap}& B4      & duas folhas dormentes com a mesma guarda \\
+\code{no\_leaf}       & B2      & guarda da folha viva vira falsa \\
+\code{tree\_double}   & B3      & árvore emite o resultado duas vezes \\
+\code{skip\_stage}    & C1      & \code{Feed\_2} lê \code{Acc0} \\
+\code{early\_score}   & C2      & \code{Finalize} lê \code{Acc}$_{M-1}$ \\
+\code{no\_decision}   & C3a     & guarda do \code{Decide} vivo vira falsa \\
+\code{two\_decisions} & C3b     & guarda de um \code{Decide} dormente vira verdadeira \\
+\code{partial\_vote}  & D1      & \code{Vote} deixa de consumir o voto da árvore 0 \\
+\code{no\_vote}       & D2a     & guarda do \code{Vote} vira falsa \\
+\code{wrong\_value}   & PC      & rede prediz outra classe válida \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{O par \code{overlap} / \code{hidden\_overlap} merece atenção.} O
+primeiro habilita uma folha dormente ao lado da viva: a entrada do arquivo
+alcança as duas, e tanto B1 (por entrada) quanto B4 (estrutural) falham. O
+segundo dá a mesma guarda a duas folhas que a entrada \emph{nunca alcança}:
+B1 \textbf{passa}, e só B4 falha. Esse par demonstra que as duas técnicas têm
+escopos genuinamente diferentes --- não é retórica.
+
+Do mesmo modo, \code{wrong\_value} produz uma rede que satisfaz \emph{todas}
+as propriedades CTL e falha apenas na conformidade: comportar-se bem e computar
+a coisa certa são perguntas distintas.
+\end{nota}
+
+\section{Segunda evidência: concordância com o \cpntools{}}
+
+O \cpn{} executa o simulador do \cpntools{} 4.0.1 de forma \emph{headless} ---
+através do Access/CPN, entrando na ferramenta de espaço de estados exatamente
+como o \emph{Enter State Space} da interface faz, calculando os grafos de
+ocorrências e de SCCs e avaliando consultas ASK-CTL --- e compara cada
+estatística e cada veredicto.
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Redes comparadas (duas corretas + todos os mutantes de cada) & \textbf{28} \\
+Redes em que \emph{todos} os valores coincidem & \textbf{28} \\
+Vereditos \emph{falsos} confirmados pelo \cpntools{} & \textbf{81} \\
+Discordâncias & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{Por que os 81 são a parte que importa.} Concordância apenas nas redes
+corretas também seria alcançada por dois verificadores que sempre respondem
+``verdadeiro''. São os vereditos \emph{falsos} --- confirmados independentemente
+pelo \cpntools{} --- que mostram que ambos os motores detectam as mesmas
+violações nos mesmos lugares.
+\end{nota}
+
+Essa comparação foi refeita \emph{depois} de o motor de avaliação do CPN ML ser
+inteiramente substituído (expressões regulares $\to$ \emph{parser} real):
+mesmas 28 redes, mesmos 81 vereditos falsos, nenhuma discordância. Nenhum
+veredicto se moveu.
+
+\section{Terceira evidência: os contraexemplos redisparam}
+
+Como descrito no capítulo~\ref{cap:cex}, toda sequência produzida para todo
+mutante é redisparada com a regra de disparo da rede e tem de reproduzir a
+violação. É uma verificação da busca por código que não é a busca.
+
+\section{O que \emph{não} está garantido}
+
+Esta seção é tão importante quanto as anteriores.
+
+\begin{center}
+\begin{tabular}{@{}p{5.4cm}p{8.2cm}@{}}
+\toprule
+\textbf{Limitação} & \textbf{Consequência prática} \\
+\midrule
+Verificação \code{ctl} é \textbf{por entrada}
+  & Verificar 3 amostras não diz nada sobre a quarta. Só B4 (estrutural) vale
+    para todo o espaço. \\[4pt]
+Explosão de estados
+  & Acima de \code{max\_nodes} as propriedades de espaço de estados ficam
+    \emph{sem veredicto} --- e ``sem veredicto'' nunca deve ser lido como
+    ``aprovado''. \\[4pt]
+PC é teste
+  & Conformidade nas entradas dadas, não prova de equivalência funcional. \\[4pt]
+O fragmento CPN ML tem limites
+  & Redes temporizadas (\code{@+}), conjuntos de fusão além de port/socket, e
+    tipos de dados declarados pelo usuário não são suportados. O que está fora
+    levanta \code{UnsupportedNet} em vez de ser mal interpretado. \\[4pt]
+Variável livre sobre domínio infinito
+  & A rede é \textbf{recusada}, nomeando a variável. Prosseguir verificaria uma
+    rede menor do que a desenhada. \\[4pt]
+Verifica a rede, não o modelo
+  & Acurácia, justiça e robustez do classificador são outras perguntas. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{O princípio de projeto por trás de tudo isso}: quando a ferramenta não
+sabe, ela \emph{diz que não sabe}. Nunca chuta, nunca omite em silêncio. Três
+defeitos encontrados no desenvolvimento eram exatamente violações desse
+princípio --- uma propriedade sumindo do relatório em vez de aparecer como
+\code{SKIP}; uma entrada sendo ignorada sem aviso; uma sobreposição de guardas
+reportada como disjunta. Os três foram corrigidos, e cada um virou teste.
+\end{nota}
+
+% ============================================================================
+\chapter{Uso prático}
+% ============================================================================
+
+\section{Linha de comando}
+
+\begin{lstlisting}[language=bash]
+cpncheck check modelo.cpn --labels 0,1,2     # verifica e imprime o relatorio
+cpncheck check modelo.cpn --trace            # + contraexemplos completos
+cpncheck check modelo.cpn --json out.json    # vereditos em JSON
+cpncheck check modelo.cpn --latex            # tabela LaTeX
+cpncheck askctl modelo.cpn -o askctl.sml     # script para o CPN Tools
+cpncheck mutants modelo.cpn mutantes/        # um mutante por propriedade
+cpncheck oracle modelo.cpn                   # roda o CPN Tools e compara
+\end{lstlisting}
+
+\section{Python}
+
+\begin{lstlisting}[language=Python]
+from cpncheck import check_cpn
+
+resultado = check_cpn("modelo.cpn", class_labels=[0, 1, 2])
+print(resultado.report())
+assert resultado.passed
+
+for r in resultado.failures:
+    print(r.id, r.detail)          # o contraexemplo, renderizado
+    cex = r.cex
+    cex.kind                       # finite | lasso | witness | structural | conformance
+    cex.sequence(bindings=True)    # com as ligacoes de cada passo
+    cex.input                      # a entrada que a violacao exige
+    cex.replay(checker.cnet)       # True: ele realmente faz o que diz
+\end{lstlisting}
+
+\section{Como ler o relatório}
+
+\begin{lstlisting}[language={},basicstyle=\ttfamily\scriptsize]
+Model checking: gbdt_binary.cpn  [Gradient Boosting Decision Trees]
+=======================================================================
+  occurrence graph : 14 nodes, 13 arcs
+  SCC graph        : 14 nodes, 13 arcs, 1 dead marking(s), 1 home marking(s)
+  inputs           : 1 model checked, 0 tested   time: 0.00s
+  semantics        : CTL over the occurrence graph, dead markings with
+                     a self-loop
+
+  CTL model checking on the occurrence graph
+  ---------------------------------------------------------------------
+  A1   Termination                  AF dead                         PASS
+  ...
+  16 passed, 0 failed, 0 skipped -- VERIFIED
+\end{lstlisting}
+
+Três coisas a observar:
+
+\begin{enumerate}
+  \item A linha \code{inputs} diz \emph{quantas entradas} foram verificadas.
+        Um \code{VERIFIED} com \code{1 model checked} é uma afirmação sobre
+        uma entrada.
+  \item A linha \code{semantics} declara a convenção de marcação morta em uso.
+  \item \code{skipped} não é \code{passed}. Uma propriedade pulada traz o
+        motivo ao lado.
+\end{enumerate}
+
+\section{Verificando redes que não são de \emph{machine learning}}
+
+As propriedades são dados, não código. Um perfil próprio permite verificar
+qualquer rede:
+
+\begin{lstlisting}[language=Python]
+import collections
+from cpncheck import CPNModelChecker
+from cpncheck.formula import AF, AG, Dead, MaxTokens
+from cpncheck.profile import Profile
+from cpncheck.selectors import Places
+
+class MeuPerfil(Profile):
+    name = "minhas redes"
+    catalog = meus_descritores
+
+    def matches(self, net):
+        return any(p["name"] == "Done" for p in net.places)
+
+    def ctl_formulas(self, net, groups, labels):
+        return collections.OrderedDict([
+            ("T1", AF(Dead().phrased("o fim"))),
+            ("T2", AG(MaxTokens(Places(name="Done"), 1))),
+        ])
+
+print(CPNModelChecker("minha.cpn", profile=MeuPerfil()).check().report())
+\end{lstlisting}
+
+% ============================================================================
+\chapter*{Glossário}
+\addcontentsline{toc}{chapter}{Glossário}
+% ============================================================================
+
+\begin{description}\setlength{\itemsep}{3pt}
+  \item[Marcação] O estado da rede: quantas fichas, e com que valores, há em
+        cada lugar.
+  \item[Elemento de ligação] Uma transição \emph{mais} uma atribuição de
+        valores às suas variáveis. É a unidade de ação.
+  \item[Grafo de ocorrências] O grafo de todas as marcações alcançáveis; a
+        estrutura de Kripke da rede.
+  \item[Marcação morta] Marcação sem transições habilitadas: a rede parou.
+  \item[\emph{Home marking}] Marcação alcançável a partir de qualquer marcação
+        alcançável.
+  \item[SCC] Componente fortemente conexa: conjunto maximal de nós mutuamente
+        alcançáveis.
+  \item[CTL] Lógica temporal de árvores de computação; $AG$, $AF$, $EF$,
+        $E[\cdot\,U\,\cdot]$.
+  \item[Segurança / vivacidade] ``Nada de ruim acontece'' ($AG$) \emph{vs.}
+        ``algo de bom acontece'' ($AF$).
+  \item[Contraexemplo] Evidência concreta de que uma propriedade não vale.
+  \item[Laço (\emph{lasso})] Contraexemplo com prefixo + ciclo, a forma
+        necessária quando a violação é uma execução infinita.
+  \item[Mutante] Rede derivada de uma correta por uma edição que quebra uma
+        propriedade nomeada; serve para provar que o verificador consegue
+        responder ``falso''.
+  \item[Perfil] O objeto que informa ao verificador o que as redes de um
+        domínio significam.
+  \item[ASK-CTL] A biblioteca de model checking do \cpntools{}.
+  \item[CPN ML] O subconjunto de Standard ML usado em guardas e inscrições.
+\end{description}
+
+\vfill
+\begin{center}\small
+\rule{0.4\textwidth}{0.4pt}\\[6pt]
+\cpn{} --- MIT\\
+\url{https://github.com/GrupoCybersegurancaVirtus/cpncheck}
+\end{center}
+
+\end{document}
