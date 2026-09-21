@@ -11,7 +11,7 @@ Reports are plain text, JSON (:meth:`ModelCheckResult.to_dict`) and LaTeX
 import os
 from typing import Any, Dict, List, Optional
 
-from .properties import METHODS, PROPERTY_CATALOG, Property
+from .properties import METHODS, Property
 
 __all__ = ["PropertyResult", "ModelCheckResult", "compare_results"]
 
@@ -53,13 +53,16 @@ class PropertyResult:
         """The catalog descriptor.
 
         Returns:
-            Property: The descriptor given to the verdict, or the catalog entry.
+            Property: The descriptor the verdict was given.
 
         Raises:
-            KeyError: When the id is neither given a descriptor nor in the
-                built-in catalog.
+            KeyError: When the verdict carries no descriptor, which means the
+                profile's catalog has no entry for this identifier.
         """
-        return self._spec if self._spec is not None else PROPERTY_CATALOG[self.id]
+        if self._spec is None:
+            raise KeyError(f"no descriptor for property {self.id!r}: the "
+                           "profile's catalog does not define it")
+        return self._spec
 
     # Property returning the printable status of the verdict.
     @property
@@ -320,8 +323,8 @@ def compare_results(initial: ModelCheckResult, final: ModelCheckResult) -> str:
     Returns:
         str: The comparison, listing every regression.
     """
-    ids = [pid for pid in PROPERTY_CATALOG
-           if pid in initial.properties or pid in final.properties]
+    ids = list(initial.properties)
+    ids += [pid for pid in final.properties if pid not in initial.properties]
     lines = ["Initial vs. refined model", "=" * 76,
              f"  {'ID':<5}{'PROPERTY':<30}{'METHOD':<12}{'INITIAL':<9}"
              f"{'REFINED':<9}RESULT", "  " + "-" * 74]
@@ -338,7 +341,7 @@ def compare_results(initial: ModelCheckResult, final: ModelCheckResult) -> str:
             verdict = "fixed"
         elif (a and a.holds is None) or (b and b.holds is None):
             verdict = "not compared"
-        spec = PROPERTY_CATALOG[pid]
+        spec = (a or b).spec
         lines.append(f"  {pid:<5}{spec.name:<30}{spec.method:<12}{sa:<9}{sb:<9}"
                      f"{verdict}")
     lines.append("")

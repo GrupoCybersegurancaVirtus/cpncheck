@@ -1,54 +1,31 @@
-"""Mutants of generated nets: every property must be able to fail.
+"""Mutants: every property must be able to fail.
 
-A model checker that answers "true" on correct nets has shown nothing until it
-is also seen answering "false" on incorrect ones. This module derives, from a
-correct generated ``.cpn``, one mutant per property, each a small edit that
-makes that property false for the input stored in the initial marking:
+A checker that answers "true" on correct nets has shown nothing until it is
+also seen answering "false" on incorrect ones. A *mutation operator* derives,
+from a correct net, one that a named property must reject -- a small edit of a
+guard, an inscription or an arc, chosen so that exactly that property breaks.
 
-========================  ===========  ==============================================
-Mutant                    Must fail    Edit
-========================  ===========  ==============================================
-``cycle``                 A1           a live leaf gives its input token back instead
-                                       of producing its output
-``deadlock``              A2, A3       the transition producing the prediction loses
-                                       its output arc
-``dead_branch``           A4, A8       a dormant leaf is always enabled and produces
-                                       nothing: a second, predictionless end
-``double_output``         A5, A7       the prediction is deposited twice
-``bad_label``             A6           the prediction becomes a label outside L
-``overlap``               B1, B4       a dormant leaf becomes enabled next to the
-                                       live one
-``hidden_overlap``        B4           two dormant leaves get the same guard; the
-                                       sample does not reach them, so B1 still holds
-``no_leaf``               B2           the live leaf's guard becomes false
-``tree_double``           B3           a tree emits its result twice
-``skip_stage``            C1           a boosting stage reads the accumulator of the
-                                       stage before the previous one
-``early_score``           C2           Finalize reads the second-to-last accumulator
-``no_decision``           C3a          the live Decide guard becomes false
-``two_decisions``         C3b          a dormant Decide guard becomes true
-``partial_vote``          D1           Vote stops waiting for the first tree
-``no_vote``               D2a          Vote's guard becomes false
-``wrong_value``           PC           the net predicts another valid class; every
-                                       CTL property still holds
-========================  ===========  ==============================================
+This module holds the machinery: :class:`CPNDocument`, which edits a ``.cpn``
+in place while keeping it a file CPN Tools can open, and the driver that writes
+one mutant per operator. The operators themselves are supplied by the profile,
+because what a meaningful fault *is* depends on what the net is for; see
+:mod:`cpncheck.profiles.ml_trees_mutants` for a worked set of sixteen.
 
-Edits only touch guards, inscriptions and arcs (copies of existing arcs), so
-the mutants are still files CPN Tools opens, and the same mutants are fed to
-both engines in the cross-check.
+Edits only touch guards, inscriptions and arcs (copies of existing arcs), so a
+mutant is still a loadable net, and the same mutants can be given to both
+engines in the cross-check.
 """
 
 import copy
 import os
 import re
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from .coloured import ColouredNet, UnsupportedNet
 from .net import CPNNet
-from .coloured import ColouredNet
-from .statespace import build_state_space
 
-__all__ = ["CPNDocument", "Mutant", "MUTANTS", "make_mutants"]
+__all__ = ["CPNDocument", "Mutant", "make_mutants"]
 
 
 # Class wrapping a .cpn file for in-place edits that keep it loadable.
@@ -252,368 +229,94 @@ class CPNDocument:
         return path
 
 
+# ---------------------------------------------------------------------------
+# Operators
+# ---------------------------------------------------------------------------
+
 # Class describing one mutation operator.
 class Mutant:
-    """A mutation operator.
+    """A mutation operator: an edit, and the properties it must break.
 
     Attributes:
         name (str): Identifier used in file names and reports.
         targets (tuple): Properties the mutant must make fail.
-        families (tuple): Families it applies to.
+        applies (callable): ``info -> bool``; whether the operator suits this
+            net, given whatever the profile's analysis produced.
         description (str): What the edit does.
         build (callable): ``build(doc, info) -> bool``; returns False when the
             net has nothing to mutate this way.
     """
 
-    __slots__ = ("name", "targets", "families", "description", "build")
+    __slots__ = ("name", "targets", "applies", "description", "build")
 
     # Method to create a mutation operator.
-    def __init__(self, name, targets, families, description, build):
+    def __init__(self, name, targets, applies, description, build):
         """Create the operator.
 
         Args:
             name (str): Identifier.
             targets (tuple): Properties that must fail.
-            families (tuple): Applicable families.
+            applies (callable): Applicability test.
             description (str): The edit.
             build (callable): The edit itself.
         """
         self.name = name
         self.targets = targets
-        self.families = families
+        self.applies = applies
         self.description = description
         self.build = build
 
+    # Method to render the operator for debugging.
+    def __repr__(self):
+        """Return a short representation.
 
-# Function to find which transitions occur for the net's own input.
-def _analyse(path: str) -> Dict[str, object]:
-    """Locate the live and dormant transitions the operators edit.
-
-    Args:
-        path (str): A correct generated net.
-
-    Returns:
-        dict: Pages, live leaves, dormant leaves, the prediction producer,
-        channels and vote information.
-    """
-    net = CPNNet(path)
-    cnet = ColouredNet(net)
-    ss = build_state_space(cnet, max_nodes=500_000)
-    occurring = {ti for out in ss.succ for ti, _k, _w in out}
-    trans = cnet.transitions
-    top = cnet.top["name"]
-    family = cnet.family
-    trees: Dict[str, Dict[str, List[str]]] = {}
-    for ti, t in enumerate(trans):
-        is_leaf = t["page"].startswith("Tree") if family != "Decision Tree" \
-            else t["page"] == top
-        if not is_leaf:
-            continue
-        info = trees.setdefault(t["page"], {"live": [], "dormant": []})
-        info["live" if ti in occurring else "dormant"].append(t["name"])
-    pred_idx = next(i for i, p in enumerate(cnet.places)
-                    if p["name"] == "Prediction" and p["page"] == top)
-    producers = [trans[ti] for ti in occurring
-                 if any(p == pred_idx for p, _ in trans[ti]["out"])]
-    decides = [t["name"] for t in trans if t["page"] == top
-               and t["name"].startswith("Decide")]
-    live_decides = [trans[ti]["name"] for ti in occurring
-                    if trans[ti]["name"].startswith("Decide")]
-    channels = sorted({t["page"] for t in trans if t["name"] == "Finalize"})
-    labels = sorted({tok for d in ss.dead for tok in ss.markings[d][pred_idx]})
-    domain = set()
-    for t in trans:
-        for p, terms in t["out"]:
-            if p != pred_idx:
-                continue
-            for _count, code in terms:
-                try:
-                    value = eval(code, dict(cnet.env))  # noqa: S307
-                except Exception:
-                    continue
-                if isinstance(value, int):
-                    domain.add(value)
-    return {"family": family, "top": top, "trees": trees, "domain": sorted(domain),
-            "producer": producers[0]["name"] if producers else None,
-            "producer_page": producers[0]["page"] if producers else None,
-            "decides": decides, "live_decides": live_decides,
-            "channels": channels, "prediction": labels}
+        Returns:
+            str: ``<Mutant deadlock -> A2, A3>``.
+        """
+        return f"<Mutant {self.name} -> {', '.join(self.targets)}>"
 
 
-# Function to pick the first tree page with a live leaf.
-def _live_tree(info) -> Tuple[str, str]:
-    """The first tree page and its live leaf.
-
-    Args:
-        info (dict): Output of :func:`_analyse`.
-
-    Returns:
-        tuple: ``(page, leaf name)``.
-    """
-    for page, leaves in info["trees"].items():
-        if leaves["live"]:
-            return page, leaves["live"][0]
-    raise LookupError("no live leaf")
-
-
-# Function to pick a dormant, non-catch-all leaf of a tree page.
-def _dormant(info, page: str, n: int = 1) -> Optional[List[str]]:
-    """Dormant leaves of a page, excluding the catch-all.
-
-    Args:
-        info (dict): Output of :func:`_analyse`.
-        page (str): Tree page.
-        n (int): How many are needed.
-
-    Returns:
-        list|None: ``n`` leaf names, or None if the page has fewer.
-    """
-    names = [t for t in info["trees"][page]["dormant"] if not t.endswith("_default")]
-    return names[:n] if len(names) >= n else None
-
-
-# Function to find a tree page with a live leaf and enough dormant ones.
-def _page_with_dormant(info, n: int = 1) -> Optional[Tuple[str, List[str]]]:
-    """A tree page whose live leaf has ``n`` dormant, non-catch-all siblings.
-
-    Args:
-        info (dict): Output of :func:`_analyse`.
-        n (int): Dormant leaves needed.
-
-    Returns:
-        tuple|None: ``(page, dormant leaf names)``.
-    """
-    for page, leaves in info["trees"].items():
-        if not leaves["live"]:
-            continue
-        dormant = _dormant(info, page, n)
-        if dormant:
-            return page, dormant
-    return None
-
-
-# Function to make a live leaf give its token back (A1).
-def _cycle(doc: CPNDocument, info) -> bool:
-    page, leaf = _live_tree(info)
-    inp = doc.arcs(page, leaf, "PtoT")[0]
-    for arc in doc.arcs(page, leaf, "TtoP"):
-        doc.remove_arc(page, arc)
-    place = doc.place(page, doc.place_of(page, inp))
-    doc.add_arc(page, inp, "TtoP", doc.trans(page, leaf), place,
-                inp.find("annot/text").text)
-    return True
-
-
-# Function to drop the output arc of the prediction producer (A2, A3).
-def _deadlock(doc: CPNDocument, info) -> bool:
-    page, name = info["producer_page"], info["producer"]
-    for arc in doc.arcs(page, name, "TtoP"):
-        if doc.place_of(page, arc) == "Prediction":
-            doc.remove_arc(page, arc)
-    return True
-
-
-# Function to add an always-enabled dead-end leaf (A4, A8).
-def _dead_branch(doc: CPNDocument, info) -> bool:
-    found = _page_with_dormant(info)
-    if not found:
-        return False
-    page, dormant = found
-    doc.set_guard(page, dormant[0], "[true]")
-    for arc in doc.arcs(page, dormant[0], "TtoP"):
-        doc.remove_arc(page, arc)
-    return True
-
-
-# Function to deposit the prediction twice (A5, A7).
-def _double_output(doc: CPNDocument, info) -> bool:
-    page, name = info["producer_page"], info["producer"]
-    for arc in doc.arcs(page, name, "TtoP"):
-        if doc.place_of(page, arc) == "Prediction":
-            e = arc.find("annot/text").text.strip()
-            doc.set_inscription(arc, f"1`{e} ++ 1`{e}")
-    return True
-
-
-# Function to deposit a label outside the domain (A6).
-def _bad_label(doc: CPNDocument, info) -> bool:
-    page, name = info["producer_page"], info["producer"]
-    for arc in doc.arcs(page, name, "TtoP"):
-        if doc.place_of(page, arc) == "Prediction":
-            doc.set_inscription(arc, "7")
-    return True
-
-
-# Function to enable a dormant leaf next to the live one (B1, B4).
-def _overlap(doc: CPNDocument, info) -> bool:
-    found = _page_with_dormant(info)
-    if not found:
-        return False
-    page, dormant = found
-    doc.set_guard(page, dormant[0], "[true]")
-    return True
-
-
-# Function to give two dormant leaves the same guard (B4 only).
-def _hidden_overlap(doc: CPNDocument, info) -> bool:
-    for page in info["trees"]:
-        dormant = _dormant(info, page, 2)
-        if dormant:
-            doc.set_guard(page, dormant[0], doc.guard(page, dormant[1]))
-            return True
-    return False
-
-
-# Function to disable the live leaf of a tree (B2).
-def _no_leaf(doc: CPNDocument, info) -> bool:
-    page, leaf = _live_tree(info)
-    doc.set_guard(page, leaf, "[false]")
-    return True
-
-
-# Function to make a tree emit its result twice (B3).
-def _tree_double(doc: CPNDocument, info) -> bool:
-    page, leaf = _live_tree(info)
-    for arc in doc.arcs(page, leaf, "TtoP"):
-        e = arc.find("annot/text").text.strip()
-        doc.set_inscription(arc, f"1`{e} ++ 1`{e}")
-    return True
-
-
-# Function to make a stage skip its predecessor (C1).
-def _skip_stage(doc: CPNDocument, info) -> bool:
-    for page in reversed(info["channels"]):
-        try:
-            feed2 = doc.arcs(page, "Feed_2", "PtoT")
-        except KeyError:
-            continue
-        for arc in feed2:
-            if doc.place_of(page, arc) == "Acc1":
-                doc.retarget(arc, doc.place(page, "Acc0"))
-                return True
-    return False
-
-
-# Function to finalise a channel before its last stage (C2).
-def _early_score(doc: CPNDocument, info) -> bool:
-    for page in reversed(info["channels"]):
-        accs = sorted(int(m.group(1)) for p in doc.pages[page].findall("place")
-                      for m in [re.fullmatch(r"Acc(\d+)",
-                                             (p.findtext("text") or "").strip())] if m)
-        if len(accs) < 2:
-            continue
-        for arc in doc.arcs(page, "Finalize", "PtoT"):
-            doc.retarget(arc, doc.place(page, f"Acc{accs[-2]}"))
-            return True
-    return False
-
-
-# Function to disable the live decision (C3a).
-def _no_decision(doc: CPNDocument, info) -> bool:
-    if not info["live_decides"]:
-        return False
-    doc.set_guard(info["top"], info["live_decides"][0], "[false]")
-    return True
-
-
-# Function to enable a second decision (C3b).
-def _two_decisions(doc: CPNDocument, info) -> bool:
-    dormant = [d for d in info["decides"] if d not in info["live_decides"]]
-    if not dormant:
-        return False
-    doc.set_guard(info["top"], dormant[0], "[true]")
-    return True
-
-
-# Function to make Vote stop waiting for the first tree (D1).
-def _partial_vote(doc: CPNDocument, info) -> bool:
-    top = info["top"]
-    arcs = doc.arcs(top, "Vote", "PtoT")
-    first = next((a for a in arcs if a.find("annot/text").text.strip() == "vp0"), None)
-    if first is None or len(arcs) < 2:
-        return False
-    doc.remove_arc(top, first)
-    for arc in doc.arcs(top, "Vote", "TtoP"):
-        text = arc.find("annot/text").text
-        doc.set_inscription(arc, re.sub(r"\[\s*vp0\s*,\s*", "[", text))
-    return True
-
-
-# Function to disable Vote (D2a).
-def _no_vote(doc: CPNDocument, info) -> bool:
-    doc.set_guard(info["top"], "Vote", "[false]")
-    return True
-
-
-# Function to make the net predict another valid class (PC).
-def _wrong_value(doc: CPNDocument, info) -> bool:
-    page, name = info["producer_page"], info["producer"]
-    current = info["prediction"][0] if info["prediction"] else 0
-    other = 1 if current == 0 else 0
-    for arc in doc.arcs(page, name, "TtoP"):
-        if doc.place_of(page, arc) == "Prediction":
-            doc.set_inscription(arc, str(other))
-    return True
-
-
-_ALL = ("Decision Tree", "Random Forest", "Gradient Boosting Decision Trees")
-_GBDT = ("Gradient Boosting Decision Trees",)
-_RF = ("Random Forest",)
-
-#: Every mutation operator, in report order.
-MUTANTS: List[Mutant] = [
-    Mutant("cycle", ("A1",), _ALL, "live leaf returns its input token", _cycle),
-    Mutant("deadlock", ("A2", "A3"), _ALL,
-           "prediction producer loses its output arc", _deadlock),
-    Mutant("dead_branch", ("A4", "A8"), _ALL,
-           "dormant leaf always enabled, produces nothing", _dead_branch),
-    Mutant("double_output", ("A5", "A7"), _ALL,
-           "prediction deposited twice", _double_output),
-    Mutant("bad_label", ("A6",), _ALL, "prediction replaced by label 7", _bad_label),
-    Mutant("overlap", ("B1", "B4"), _ALL,
-           "dormant leaf enabled next to the live one", _overlap),
-    Mutant("hidden_overlap", ("B4",), _ALL,
-           "two dormant leaves share a guard", _hidden_overlap),
-    Mutant("no_leaf", ("B2",), _ALL, "live leaf guard set to false", _no_leaf),
-    Mutant("tree_double", ("B3",), _ALL, "tree emits its result twice",
-           _tree_double),
-    Mutant("skip_stage", ("C1",), _GBDT, "Feed_2 reads Acc0", _skip_stage),
-    Mutant("early_score", ("C2",), _GBDT, "Finalize reads Acc_{M-1}", _early_score),
-    Mutant("no_decision", ("C3a",), _GBDT, "live Decide guard set to false",
-           _no_decision),
-    Mutant("two_decisions", ("C3b",), _GBDT, "dormant Decide guard set to true",
-           _two_decisions),
-    Mutant("partial_vote", ("D1",), _RF, "Vote no longer consumes tree 0's vote",
-           _partial_vote),
-    Mutant("no_vote", ("D2a",), _RF, "Vote guard set to false", _no_vote),
-    Mutant("wrong_value", ("PC",), _ALL, "net predicts another valid class",
-           _wrong_value),
-]
-
+# ---------------------------------------------------------------------------
+# The driver
+# ---------------------------------------------------------------------------
 
 # Function to write every applicable mutant of a net.
-def make_mutants(path: str, out_dir: str,
-                 names: Optional[List[str]] = None) -> List[Dict[str, object]]:
-    """Derive the mutants of a correct generated net.
+def make_mutants(path: str, out_dir: str, names: Optional[List[str]] = None,
+                 profile=None) -> List[Dict[str, object]]:
+    """Derive the mutants of a correct net, one file per operator.
 
     Args:
         path (str): The correct ``.cpn``.
         out_dir (str): Where the mutants are written.
         names (list, optional): Restrict to these operators.
+        profile (Profile, optional): The profile supplying the operators;
+            detected from the net when omitted.
 
     Returns:
         list: ``{"name", "targets", "description", "path", "labels"}`` per
-        mutant written; ``labels`` is the original net's label domain, which
-        the checker must be given for A6.
+        mutant written. ``labels`` is the original net's output domain when the
+        profile reports one, which the checker needs for a domain property.
+
+    Raises:
+        UnsupportedNet: When no profile recognises the net.
     """
-    info = _analyse(path)
+    from . import profiles as _profiles      # noqa: F401  (registers built-ins)
+    from .profile import detect
+
+    if profile is None:
+        profile = detect(ColouredNet(CPNNet(path)))
+    if profile is None:
+        raise UnsupportedNet(f"{os.path.basename(path)}: no profile recognises "
+                             "this net, so there are no mutation operators")
+    operators = profile.mutation_operators()
+    info = profile.analyse_for_mutation(path) or {}
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(path))[0]
     written = []
-    for op in MUTANTS:
+    for op in operators:
         if names and op.name not in names:
             continue
-        if info["family"] not in op.families:
+        if not op.applies(info):
             continue
         doc = CPNDocument(path)
         if not op.build(doc, info):
@@ -622,5 +325,5 @@ def make_mutants(path: str, out_dir: str,
         doc.save(dst)
         written.append({"name": op.name, "targets": op.targets,
                         "description": op.description, "path": dst,
-                        "labels": info["domain"] or None})
+                        "labels": info.get("labels") or None})
     return written

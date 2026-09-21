@@ -31,14 +31,17 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..coloured import ColouredNet
+from ..conformance import check_conformance
 from ..formula import (AF, AG, EF, EU, AllMarked, And, Dead, Enabled,
                        EnabledCount, ForEach, Implies, Marked, MaxTokens, Not,
                        TokensIn)
 from ..profile import Profile, register
+from ..properties import Property, catalog
 from ..result import PropertyResult
+from ..structural import overlapping_guards
 from ..selectors import Explicit, Group, Places, Transitions
 
-__all__ = ["TreeStructure", "MLTreeProfile"]
+__all__ = ["TREE_CATALOG", "TreeStructure", "MLTreeProfile"]
 
 
 # Class locating the places and transitions the properties refer to.
@@ -104,6 +107,75 @@ class TreeStructure:
                             if info["out"] is not None] if self.vote else [])
 
 
+
+# ---------------------------------------------------------------------------
+# The catalog
+# ---------------------------------------------------------------------------
+
+_ALL = ("Decision Tree", "Random Forest", "Gradient Boosting Decision Trees")
+_GBDT = ("Gradient Boosting Decision Trees",)
+_RF = ("Random Forest",)
+#: The properties of the tree-ensemble nets, in report order.
+TREE_CATALOG = catalog(
+    Property("A1", "Termination", "AF dead", "desired", _ALL,
+             "Every maximal occurrence sequence is finite: no reachable cycle."),
+    Property("A2", "No spurious deadlock", "!EF(dead & !pred)", "undesired", _ALL,
+             "Every reachable dead marking holds a prediction."),
+    Property("A3", "Inevitable decision", "AF pred", "desired", _ALL,
+             "On every maximal occurrence sequence Prediction becomes marked."),
+    Property("A4", "Prediction recoverability", "AG EF pred", "desired", _ALL,
+             "From every reachable marking a marking with a prediction is "
+             "reachable. This is not a home-marking property; see A8."),
+    Property("A5", "Unique output", "AG |Prediction| <= 1", "undesired", _ALL,
+             "Prediction never holds more than one token."),
+    Property("A6", "Valid label", "AG Prediction subset L", "undesired", _ALL,
+             "Every token ever deposited in Prediction belongs to the declared "
+             "label domain L."),
+    Property("A7", "Safeness", "AG forall p: |p| <= 1", "structural", _ALL,
+             "Every place holds at most one token in every reachable marking."),
+    Property("A8", "Home marking", "one terminal SCC", "desired", _ALL,
+             "Some marking is reachable from every reachable marking.",
+             method="scc"),
+    Property("B1", "Leaf determinism", "forall T: AG |EN(leaves_T)| <= 1",
+             "undesired", _ALL,
+             "For the input in the initial marking, no reachable marking enables "
+             "two leaf occurrences of the same tree."),
+    Property("B2", "Inevitable leaf selection", "forall T: AF EN(leaves_T)",
+             "desired", _ALL,
+             "Every tree inevitably reaches a marking where one of its leaves is "
+             "enabled."),
+    Property("B3", "Single tree output", "forall T: AG |out_T| <= 1",
+             "structural", _ALL,
+             "The output place of every tree holds at most one token."),
+    Property("B4", "Guard disjointness", "forall T, i!=j: box_i & box_j = {}",
+             "undesired", _ALL,
+             "No two leaf guards of the same tree are satisfiable together, for "
+             "any input: the leaves partition the feature space.",
+             method="structural"),
+    Property("C1", "Stage precedence", "forall k,m: !E[!acc(k,m-1) U acc(k,m)]",
+             "undesired", _GBDT,
+             "In every class channel, stage m is never completed before stage "
+             "m-1 has been."),
+    Property("C2", "No premature score", "forall k: !E[!acc(k,M) U score(k)]",
+             "undesired", _GBDT,
+             "A channel's score appears only after its last stage completed."),
+    Property("C3a", "Inevitable decision firing", "AF EN(decide)", "desired", _GBDT,
+             "A Decide transition inevitably becomes enabled."),
+    Property("C3b", "Decision determinism", "AG |EN(decide)| <= 1", "undesired",
+             _GBDT,
+             "No reachable marking enables two Decide occurrences."),
+    Property("D1", "Complete vote", "AG(EN(vote) -> votes_all)", "undesired", _RF,
+             "Vote is only enabled when every tree has voted."),
+    Property("D2a", "Inevitable aggregation", "AF EN(vote)", "desired", _RF,
+             "Vote inevitably becomes enabled."),
+    Property("D2b", "Single aggregation", "AG |Prediction| <= 1", "structural", _RF,
+             "The aggregation deposits at most one class (same formula as A5)."),
+    Property("PC", "Prediction consistency", "net(x) = model(x)", "desired", _ALL,
+             "On the tested inputs, the class the net computes equals the "
+             "classifier's.", method="testing"),
+)
+
+
 # ---------------------------------------------------------------------------
 # The profile
 # ---------------------------------------------------------------------------
@@ -119,6 +191,7 @@ class MLTreeProfile(Profile):
 
     name = "ml_trees"
     priority = 10
+    catalog = TREE_CATALOG
     ev_variants = {"A3": "A3_ev", "B2": "B2_ev",
                    "C3a": "C3a_ev", "D2a": "D2a_ev"}
 
@@ -372,6 +445,30 @@ class MLTreeProfile(Profile):
         """
         return self._check_pc(checker, reference, samples, use_final)
 
+    # Method to list the mutation operators that suit this family of nets.
+    def mutation_operators(self):
+        """The sixteen operators of :mod:`cpncheck.profiles.ml_trees_mutants`.
+
+        Returns:
+            list: The operators, in report order.
+        """
+        from .ml_trees_mutants import TREE_MUTANTS
+        return TREE_MUTANTS
+
+    # Method to analyse a net before its mutants are derived.
+    def analyse_for_mutation(self, path):
+        """Locate the live and dormant transitions the operators edit.
+
+        Args:
+            path (str): The correct ``.cpn``.
+
+        Returns:
+            dict: Pages, live and dormant leaves, the prediction producer,
+            channels, vote information and the label domain.
+        """
+        from .ml_trees_mutants import analyse
+        return analyse(path)
+
     # Method to normalise an input into the token the net expects.
     def as_input_token(self, net, x, feature_names=None):
         """Convert a sample into the ``SAMPLE`` record the net reads.
@@ -468,84 +565,38 @@ class MLTreeProfile(Profile):
         return tuple(values)
 
 
-    # Method to read a leaf guard back as an axis-aligned box.
-    @staticmethod
-    def _guard_box(guard: Optional[str]):
-        """Parse a conjunctive leaf guard into per-field intervals.
-
-        Leaf guards are conjunctions of ``#f<i> x <= c`` / ``#f<i> x > c``, so a
-        leaf covers a box. Catch-all guards are complements of a disjunction
-        and are not boxes; None is returned for them, which is sound for the
-        overlap test because a complement is disjoint from the leaves it was
-        built from.
-
-        Args:
-            guard (str): The guard text.
-
-        Returns:
-            dict|None: ``{field: (low, high)}`` for ``low < x <= high``.
-        """
-        text = (guard or "").strip()
-        if text.startswith("[") and text.endswith("]"):
-            text = text[1:-1].strip()
-        if not text or text.lower() == "true":
-            return {}
-        if re.search(r"\bnot\b|\borelse\b|\bfalse\b", text):
-            return None
-        box: Dict[str, List[float]] = {}
-        for atom in (a.strip() for a in text.split("andalso")):
-            m = re.fullmatch(r"#(f\d+)\s+x\s*(<=|<|>=|>)\s*"
-                             r"\(?(~?[\d.]+(?:[eE]~?[\d+-]+)?)\)?", atom)
-            if not m:
-                return None
-            field, op, raw = m.group(1), m.group(2), m.group(3)
-            value = float(raw.replace("~", "-"))
-            low, high = box.setdefault(field, [float("-inf"), float("inf")])
-            if op in ("<=", "<"):
-                box[field][1] = min(high, value)
-            else:
-                box[field][0] = max(low, value)
-        return {k: tuple(v) for k, v in box.items()}
-
-
     # Method to find leaves of the same tree whose regions intersect.
     def _check_b4(self, checker) -> PropertyResult:
-        """Structural guard disjointness over the whole feature space.
+        """Guard disjointness over the whole feature space.
+
+        The leaves of one tree partition the feature space, so no two of them
+        may be satisfiable together -- for any input, not just the explored
+        one. A catch-all leaf's guard is the negation of its siblings' and is
+        not a box; it is disjoint from them by construction, so it is skipped
+        rather than counted as unparsed.
+
+        Args:
+            checker (CPNModelChecker): The checker.
 
         Returns:
             PropertyResult: The B4 verdict.
         """
         t0 = time.perf_counter()
-        found = []
-        unparsed = 0
-        trans = checker.cnet.transitions
-        inf = float("inf")
-        for page, info in checker.structure.trees.items():
-            boxes = []
-            for ti in info["leaves"]:
-                box = self._guard_box(trans[ti]["guard_text"])
-                if box is None:
-                    if not trans[ti]["name"].endswith("_default"):
-                        unparsed += 1
-                    continue
-                boxes.append((trans[ti]["name"], box))
-            for i in range(len(boxes)):
-                for j in range(i + 1, len(boxes)):
-                    (ni, bi), (nj, bj) = boxes[i], boxes[j]
-                    if all(max(bi.get(f, (-inf, inf))[0], bj.get(f, (-inf, inf))[0])
-                           < min(bi.get(f, (-inf, inf))[1], bj.get(f, (-inf, inf))[1])
-                           for f in set(bi) | set(bj)):
-                        found.append((page, ni, nj))
+        groups = {label: roles["leaves"]
+                  for label, roles in checker.groups.get("trees", {}).items()}
+        found, unparsed = overlapping_guards(
+            checker.cnet, groups, ignore=lambda n: n.endswith("_default"))
         elapsed = time.perf_counter() - t0
+        spec = self.catalog.get("B4")
         if found:
             page, a, b = found[0]
             return PropertyResult("B4", False,
-                                  f"{len(found)} overlapping leaf pair(s), first: "
-                                  f"{page} {a} / {b}", elapsed)
+                                  f"{len(found)} overlapping leaf pair(s), "
+                                  f"first: {page} {a} / {b}", elapsed, spec=spec)
         if unparsed:
             return PropertyResult("B4", None, f"{unparsed} leaf guard(s) are not "
-                                  "conjunctions of bounds", elapsed)
-        return PropertyResult("B4", True, "", elapsed)
+                                  "conjunctions of bounds", elapsed, spec=spec)
+        return PropertyResult("B4", True, "", elapsed, spec=spec)
 
     # Method to ask the classifier for the class of every sample.
     def _model_predictions(self, checker, classifier, xs,
@@ -586,6 +637,7 @@ class MLTreeProfile(Profile):
         """Conformance testing: the terminal Prediction of a run vs the model.
 
         Args:
+            checker (CPNModelChecker): The checker.
             classifier: The model the net was generated from.
             xs (list): Record tuples.
             use_final (bool): Whether the net carries the refined rules.
@@ -593,7 +645,6 @@ class MLTreeProfile(Profile):
         Returns:
             PropertyResult: The PC verdict.
         """
-        t0 = time.perf_counter()
         # A classifier that rounds its inputs to float32 (as scikit-learn
         # does) is a function of the rounded values; give the net the same
         # values, as the exporter does for the sample of the initial marking.
@@ -602,23 +653,15 @@ class MLTreeProfile(Profile):
             import numpy as np
             xs = [tuple(float(v) for v in np.asarray(x, dtype=np.float32))
                   for x in xs]
-        try:
-            got = []
-            for x in xs:
-                final = checker.cnet.run(checker.cnet.initial_marking(x))
-                tokens = final[checker.structure.pred]
-                got.append(int(tokens[0]) if len(tokens) == 1 else None)
-            expected = self._model_predictions(checker, classifier, xs, use_final)
-        except Exception as exc:
-            return PropertyResult("PC", None, f"not evaluated: {exc}",
-                                  time.perf_counter() - t0)
-        bad = [(g, e) for g, e in zip(got, expected) if g != e]
-        if bad:
-            return PropertyResult("PC", False, f"{len(bad)}/{len(xs)} input(s) "
-                                  f"disagree, first: net={bad[0][0]} "
-                                  f"model={bad[0][1]}", time.perf_counter() - t0)
-        return PropertyResult("PC", True, f"{len(xs)}/{len(xs)} inputs agree",
-                              time.perf_counter() - t0)
+        structure = checker.structure
+        return check_conformance(
+            checker.cnet, list(xs),
+            lambda batch: self._model_predictions(checker, classifier, batch,
+                                                  use_final),
+            input_places=(structure.input,),
+            output_places=(structure.pred,),
+            pid="PC", spec=self.catalog.get("PC"),
+            decode=lambda toks: int(toks[0]) if len(toks) == 1 else None)
 
 
 register(MLTreeProfile())

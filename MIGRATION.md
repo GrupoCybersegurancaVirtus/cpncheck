@@ -7,9 +7,12 @@ CPNCheck was extracted from `pyruleanalyzer`.
 * **Phase 2 — done.** Selectors, formulas as data, profiles, and one AST
   rendered to both backends. The checker no longer contains any knowledge of
   what the nets compute.
+* **Step 4 — done.** The structural and conformance techniques, the mutation
+  operators and the property catalog are all generic or profile-supplied. The
+  only ML left in the package is under `cpncheck/profiles/`.
 
 `pyruleanalyzer` is **not yet modified** and does not depend on CPNCheck; it
-still carries its own copy. Nothing there breaks until step 6 below is done
+still carries its own copy. Nothing there breaks until step 7 below is done
 deliberately.
 
 ## 1. The modules
@@ -24,12 +27,15 @@ deliberately.
 | `cpncheck/formula.py` | **new (phase 2)** | CTL formulas as data; they explain themselves |
 | `cpncheck/askctl.py` | **new (phase 2)** | render a formula as an ASK-CTL query |
 | `cpncheck/profile.py` | **new (phase 2)** | the caller's side of the interface |
-| `cpncheck/profiles/ml_trees.py` | **phase 2**, from `model_checker.py` | everything ML-specific, in one place |
-| `cpncheck/properties.py` | `model_checker.py` 115–239 | the property descriptors |
+| `cpncheck/structural.py` | **step 4**, from `model_checker.py` | guard boxes: what holds for every input |
+| `cpncheck/conformance.py` | **step 4**, from `model_checker.py` | run to a dead marking, compare with a reference |
+| `cpncheck/profiles/ml_trees.py` | **phase 2**, from `model_checker.py` | the tree nets: structure, catalog, formulas |
+| `cpncheck/profiles/ml_trees_mutants.py` | **step 4**, from `cpn_mutants.py` | the sixteen tree mutation operators |
+| `cpncheck/properties.py` | `model_checker.py` 115–239 | the property descriptors; no catalog of its own |
 | `cpncheck/result.py` | `model_checker.py` 241–525, 1476–1515 | verdicts, text/JSON/LaTeX reports |
 | `cpncheck/checker.py` | `model_checker.py` 631–1473 | orchestration; profile-driven |
 | `cpncheck/oracle.py` | `cpntools_oracle.py` | run CPN Tools 4.0.1 headless |
-| `cpncheck/mutation.py` | `cpn_mutants.py` | mutants: every property must be able to fail |
+| `cpncheck/mutation.py` | `cpn_mutants.py` | `CPNDocument`, the operator framework and the driver |
 | `cpncheck/cli.py` | new | `cpncheck check / askctl / mutants / oracle` |
 
 Not extracted, staying in pyruleanalyzer: `cpn_tools_exporter.py` (it *builds*
@@ -94,37 +100,36 @@ Two things every formula does:
 
 ## 3. What is still domain-specific
 
-Phase 2 moved the property catalog, the structure and the four techniques out
-of the checker. What remains, and where it goes:
+Phase 2 moved the catalog, the structure and the formulas out of the checker;
+step 4 did the same for the two non-CTL techniques, the mutation operators and
+the property descriptors. What a profile now supplies, all of it optional:
 
-| Where | What | Step |
-|---|---|---|
-| `coloured.py` `ColouredNet.__init__` | `self.family = net.family()`, and the evaluation environment injects `vadd`, `vsum`, `argmax`, `allzero`, `decide` | 5 |
-| `coloured.py` `initial_marking` | now takes `places=`; the name-based `Input` fallback is still there for callers that do not pass it | 5 |
-| `net.py` | `family`, `sample_from_initial_marking`, `leaf_outputs`, `eval_subpage` | 5 |
-| `properties.py` | the built-in catalog is still the ML one, and its `families` field names ML model families — but it is now only a *default*, overridable per profile | 4 |
-| `profiles/ml_trees.py` `_check_b4`, `_check_pc` | the structural and conformance techniques, still written against tree nets | 4 |
-| `mutation.py` | 16 mutation operators written against those nets | 4 |
+| Hook | What it answers |
+|---|---|
+| `matches` / `family` | is this one of my nets, and what do I call it |
+| `resolve_groups` | the domains `ForEach` quantifies over |
+| `ctl_formulas` | the temporal properties, as formulas |
+| `scc_properties` | the properties answered from the SCC decomposition |
+| `static_checks` | verdicts that need no occurrence graph |
+| `conformance` | comparison with a reference implementation |
+| `label_domain` | the admissible output tokens |
+| `as_input_token` / `input_places` | how another input is written into the net |
+| `mutation_operators` / `analyse_for_mutation` | the faults that must be caught |
+| `catalog` | the descriptors verdicts are reported under |
 
-### Step 4 — generalise the two non-CTL techniques
+What remains in the generic layer, and is the subject of step 5:
 
-Neither is really ML-specific:
-
-* `_check_b4`/`_guard_box` is "do the guards of a group of transitions
-  overlap", with an interval backend today and room for an SMT one. It should
-  take a transition group and return the overlapping pairs.
-* `_check_pc` is "run to a dead marking with this token in this place, compare
-  a projection of the terminal marking with `f(input)`". pyruleanalyzer
-  supplies `f`; CPNCheck does not need to know what it is.
-
-Mutation operators generalise the same way: an operator is an edit to a guard,
-an inscription or an arc, selected by the same selectors the properties use.
+| Where | What |
+|---|---|
+| `coloured.py` `ColouredNet.__init__` | `self.family = net.family()`, and the evaluation environment injects `vadd`, `vsum`, `argmax`, `allzero`, `decide` |
+| `coloured.py` `initial_marking` | takes `places=`; the name-based `Input` fallback is kept for callers that do not pass it |
+| `net.py` | `family`, `sample_from_initial_marking`, `leaf_outputs`, `eval_subpage` |
 
 ### Step 5 — a pluggable ML prelude
 
 `vadd`/`vsum`/`argmax`/`decide` become functions a profile registers, and
 ideally are read from the net's own `<ml>` block. That is the same parser work
-as §4 below, so the two land together.
+as §4, so the two land together.
 
 ## 4. What is missing for arbitrary `.cpn` files
 
@@ -153,9 +158,19 @@ but a net drawn by hand in CPN Tools will usually be rejected.
   machine with the engine installed before relying on it. The old generator is
   kept as `CPNModelChecker._legacy_ml_program` until that is done, and should
   be deleted afterwards.
-* `properties.AF_PROPERTIES` is dead (it was already unused in pyruleanalyzer);
-  the same information now lives in `MLTreeProfile.ev_variants`. Delete it or
-  make it the documented way to declare an ASK-CTL variant.
+* **Names moved in step 4.** `PROPERTY_CATALOG` is now
+  `cpncheck.profiles.ml_trees.TREE_CATALOG`, `MUTANTS` is
+  `cpncheck.profiles.ml_trees_mutants.TREE_MUTANTS`, and `AF_PROPERTIES` is
+  gone (it was already dead; the information lives in
+  `MLTreeProfile.ev_variants`). `Mutant.families` became `Mutant.applies`, a
+  predicate. The pyruleanalyzer shim must import the first two from the
+  profile.
+* `PropertyResult.spec` no longer falls back to a global catalog: a verdict
+  carries its descriptor, and asking for one that the profile does not define
+  raises `KeyError` with that message.
+* Guard boxes now track strictness, so `x >= 3` and `x <= 3` are correctly
+  found to overlap at the single point 3. The exporter only emits `<=` and `>`,
+  so no verdict on a generated net changes.
 * `ForEach` renders to a right-folded `AND`, so a forest with many trees
   produces a deep expression. Fine so far; revisit if it becomes a problem.
 
@@ -165,8 +180,8 @@ but a net drawn by hand in CPN Tools will usually be rejected.
 2. ~~Selectors, formulas as data, profiles, one AST with two backends.~~ **done**
 3. Re-confirm the ASK-CTL agreement with CPN Tools, then delete
    `_legacy_ml_program`.
-4. Generalise the structural and conformance techniques, and the mutation
-   operators (§3 step 4).
+4. ~~Generalise the structural and conformance techniques, the mutation
+   operators and the catalog.~~ **done**
 5. Pluggable ML prelude; widen the CPN ML fragment (§3 step 5, §4).
 6. **Counterexamples** — structured objects, bindings and markings along the
    trace, lasso witnesses for the `AF` properties, a witness point for guard
@@ -178,7 +193,7 @@ but a net drawn by hand in CPN Tools will usually be rejected.
 ```python
 # pyruleanalyzer/model_checker.py
 from cpncheck import CPNModelChecker, check_cpn, compare_results  # noqa: F401
-from cpncheck.profiles.ml_trees import MLTreeProfile              # noqa: F401
+from cpncheck.profiles.ml_trees import TREE_CATALOG, MLTreeProfile  # noqa: F401
 ```
 
 `pyruleanalyzer` declares `cpncheck` as a normal dependency (it has none of its

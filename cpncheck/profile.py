@@ -15,8 +15,6 @@ detection find it.
 import collections
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .properties import PROPERTY_CATALOG
-
 __all__ = ["Profile", "register", "profiles", "detect"]
 
 #: Registered profiles, in registration order.
@@ -38,7 +36,7 @@ class Profile:
     name = "generic"
     priority = 0
     #: Descriptors of the properties this profile reports, in report order.
-    catalog = PROPERTY_CATALOG
+    catalog: "collections.OrderedDict" = collections.OrderedDict()
 
     # Method to decide whether this profile recognises a net.
     def matches(self, net) -> bool:
@@ -152,6 +150,31 @@ class Profile:
 
         Returns:
             PropertyResult|None: The verdict, or None when not supported.
+        """
+        return None
+
+    # Method to list the mutation operators that suit this family of nets.
+    def mutation_operators(self) -> Sequence:
+        """Operators deriving, from a correct net, one that must fail.
+
+        Returns:
+            sequence: :class:`~cpncheck.mutation.Mutant` operators.
+        """
+        return ()
+
+    # Method to analyse a net before its mutants are derived.
+    def analyse_for_mutation(self, path: str) -> Optional[Dict[str, Any]]:
+        """Whatever the operators need to know about a net before editing it.
+
+        The driver passes the result to every operator untouched, so its shape
+        is entirely up to the profile. Two conventional keys are read by the
+        driver itself: ``"labels"``, reported as the mutant's output domain.
+
+        Args:
+            path (str): The correct ``.cpn``.
+
+        Returns:
+            dict|None: The analysis.
         """
         return None
 

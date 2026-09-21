@@ -112,6 +112,14 @@ when it fails (the shortest occurrence sequence to the violation, and why that
 marking is bad), and **it renders to ASK-CTL**, so the Python check and the CPN
 Tools script are the same question by construction.
 
+The other three techniques are equally yours to use. A profile's
+`static_checks` can call `cpncheck.structural.overlapping_guards` to ask
+whether two branches of a choice are ever satisfiable together — an answer that
+covers *every* input; `conformance` can call
+`cpncheck.conformance.check_conformance` with any reference implementation; and
+`mutation_operators` supplies the faults your properties must catch, built from
+`cpncheck.mutation.CPNDocument`.
+
 ## Status
 
 Pre-release, extracted from

@@ -41,7 +41,7 @@ from .askctl import MLProgram
 from .formula import Context
 from .net import CPNNet
 from .profile import Profile, detect
-from .properties import PROPERTY_CATALOG, Property
+from .properties import Property
 from .result import ModelCheckResult, PropertyResult
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
@@ -103,7 +103,8 @@ class CPNModelChecker:
         self.formulas = self.profile.ctl_formulas(
             self.cnet, self.groups, self.labels)
         self.scc_props = self.profile.scc_properties(self.cnet, self.groups)
-        self.catalog = getattr(self.profile, "catalog", PROPERTY_CATALOG)
+        self.catalog = getattr(self.profile, "catalog",
+                               collections.OrderedDict())
         self.structure = (self.profile.structure(self.cnet)
                           if hasattr(self.profile, "structure") else None)
         self.input_places = tuple(self.profile.input_places(self.cnet))

@@ -15,12 +15,13 @@ import pytest
 
 from cpncheck import (
     METHODS,
-    PROPERTY_CATALOG,
     CPNModelChecker,
     check_cpn,
     compare_results,
 )
-from cpncheck.mutation import MUTANTS, make_mutants
+from cpncheck.mutation import make_mutants
+from cpncheck.profiles.ml_trees import TREE_CATALOG
+from cpncheck.profiles.ml_trees_mutants import TREE_MUTANTS
 
 NETS = os.path.join(os.path.dirname(__file__), "nets")
 FIXTURES = [("gbdt_binary.cpn", "Gradient Boosting Decision Trees", [0, 1]),
@@ -62,9 +63,9 @@ def test_every_mutant_fails_the_property_it_targets(tmp_path, name, family, labe
 
 
 def test_every_property_has_a_mutant():
-    covered = {pid for m in MUTANTS for pid in m.targets}
+    covered = {pid for m in TREE_MUTANTS for pid in m.targets}
     # D2b is A5's formula on the same place, so double_output covers it too.
-    missing = set(PROPERTY_CATALOG) - {"D2b"} - covered
+    missing = set(TREE_CATALOG) - {"D2b"} - covered
     assert not missing, missing
 
 

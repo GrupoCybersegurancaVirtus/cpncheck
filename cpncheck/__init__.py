@@ -28,7 +28,7 @@ Layers, bottom up:
 from .checker import CPNModelChecker, check_cpn
 from .coloured import ColouredNet, UnsupportedNet
 from .net import CPNNet
-from .properties import METHODS, PROPERTY_CATALOG, Property
+from .properties import METHODS, Property, catalog
 from .result import ModelCheckResult, PropertyResult, compare_results
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
@@ -41,7 +41,7 @@ __all__ = [
     "DEFAULT_MAX_NODES",
     "METHODS",
     "ModelCheckResult",
-    "PROPERTY_CATALOG",
+    "catalog",
     "Property",
     "PropertyResult",
     "StateSpace",
