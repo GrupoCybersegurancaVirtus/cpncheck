@@ -16,11 +16,23 @@ colour set gives the domain, and every combination is tried. A free variable
 whose colour set is infinite makes the net unexplorable, and it is refused
 rather than silently ignored.
 
+Input arcs that are not patterns
+--------------------------------
+An input arc is usually a pattern (``x``, ``(n, p)``, ``2`e``): it is matched
+against the tokens and binds variables. CPN Tools also accepts any expression
+whose variables are bound some other way -- ``Mes(s)``, ``if x = p then 1`e
+else empty``. Such an arc binds nothing; once the binding is complete it is
+evaluated to a multiset, and the transition is enabled only if the place holds
+that multiset on top of what the pattern arcs take.
+
 Values
 ------
 Tokens are Python values, chosen so a marking is hashable and orderable: a
 record is a tuple in declared field order, a list is a tuple, unit is the empty
-tuple. Two markings are the same node exactly when they are equal.
+tuple, an enumeration constant a string, ``u(i)`` an
+:class:`~cpncheck.cpnml.IndexValue`. Two markings are the same node exactly
+when they are equal. An arc may evaluate to a multiset; it is expanded into
+tokens.
 """
 
 import collections
@@ -28,9 +40,9 @@ import itertools
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .colourset import Declarations
-from .cpnml import (MLError, Parser, compile_expression, free_variables,
-                    match_pattern, parse_expression, parse_multiset,
-                    pattern_variables, tokenize)
+from .cpnml import (IndexValue, MLError, MultiSet, Parser, compile_expression,
+                    free_variables, match_pattern, parse_expression,
+                    parse_multiset, pattern_variables, tokenize)
 from .net import CPNNet
 
 __all__ = ["UnsupportedNet", "ColouredNet"]
@@ -54,6 +66,8 @@ def _canon(value):
     Returns:
         The canonical value.
     """
+    if isinstance(value, IndexValue):
+        return value
     if isinstance(value, list):
         return tuple(_canon(v) for v in value)
     if isinstance(value, tuple):
@@ -61,8 +75,28 @@ def _canon(value):
     return value
 
 
+# Function to turn an arc term into the tokens it denotes.
+def _tokens(number, value) -> List[Any]:
+    """``number`` copies of a value, or of every element of a multiset.
+
+    Args:
+        number (int): The term's coefficient.
+        value: A token value, or a :class:`~cpncheck.cpnml.MultiSet`.
+
+    Returns:
+        list: The tokens, canonical.
+    """
+    number = int(number)
+    if isinstance(value, MultiSet):
+        out: List[Any] = []
+        for element, count in value.items():
+            out.extend([_canon(element)] * (count * number))
+        return out
+    return [_canon(value)] * number
+
+
 # Function to parse a multiset of patterns, as an input arc carries.
-def parse_pattern_multiset(text: str) -> List[Tuple[int, Any]]:
+def parse_pattern_multiset(text: str, symbols=None) -> List[Tuple[int, Any]]:
     """Parse ``2`x ++ 1`(a, b)`` into counted patterns.
 
     An input arc consumes a multiset, so a coefficient means "this many
@@ -71,6 +105,8 @@ def parse_pattern_multiset(text: str) -> List[Tuple[int, Any]]:
 
     Args:
         text (str): The inscription.
+        symbols (dict, optional): Declared constants and constructors, so
+            that a constant in the pattern matches that constant only.
 
     Returns:
         list: ``(count, pattern)`` pairs.
@@ -79,7 +115,7 @@ def parse_pattern_multiset(text: str) -> List[Tuple[int, Any]]:
         UnsupportedNet: On a syntax error or a non-literal coefficient.
     """
     try:
-        parser = Parser(tokenize(text or ""), text or "")
+        parser = Parser(tokenize(text or ""), text or "", symbols)
         if parser.peek()[0] == "end":
             raise MLError("an input arc needs an inscription")
         terms = []
@@ -141,6 +177,7 @@ class ColouredNet:
         self.declarations = Declarations(net.path, prelude)
         self.env = self.declarations.globals
         self.fields = self.declarations.fields
+        self.symbols = self.declarations.symbols
         self.top = net.top_page()
         self.places: List[Dict[str, Any]] = []
         self.transitions: List[Dict[str, Any]] = []
@@ -149,7 +186,8 @@ class ColouredNet:
         self.index = {p["gid"]: i for i, p in enumerate(self.places)}
         self.consumers: Dict[int, List[int]] = collections.defaultdict(list)
         for ti, t in enumerate(self.transitions):
-            for pidx in {p for p, _ in t["in"]}:
+            places = {p for p, _ in t["in"]} | {p for p, _ in t["in_expr"]}
+            for pidx in places:
                 self.consumers[pidx].append(ti)
         self.initial = self.initial_marking()
 
@@ -167,8 +205,8 @@ class ColouredNet:
             UnsupportedNet: When it cannot be parsed or compiled.
         """
         try:
-            return compile_expression(parse_expression(text), self.env,
-                                      self.fields)
+            return compile_expression(parse_expression(text, self.symbols),
+                                      self.env, self.fields)
         except MLError as exc:
             raise UnsupportedNet(f"{text.strip()!r}: {exc}")
 
@@ -190,7 +228,7 @@ class ColouredNet:
         if not text:
             return None
         try:
-            tree = parse_expression(text)
+            tree = parse_expression(text, self.symbols)
         except MLError as exc:
             raise UnsupportedNet(f"guard {text!r}: {exc}")
         parts = tree[1] if tree[0] == "list" else [tree]
@@ -221,7 +259,7 @@ class ColouredNet:
             UnsupportedNet: When the inscription cannot be compiled.
         """
         try:
-            parsed = parse_multiset(text)
+            parsed = parse_multiset(text, self.symbols)
             terms, trees = [], []
             for coefficient, value in parsed:
                 count = (1 if coefficient is None
@@ -399,8 +437,23 @@ class ColouredNet:
         t["guard"] = guard[0] if guard else None
         guard_trees = guard[1] if guard else []
 
-        t["in"] = [(index[g], _name_wildcards(parse_pattern_multiset(e), where))
-                   for g, e in t["in_raw"]]
+        t["in"], t["in_expr"] = [], []
+        expr_trees = []
+        for g, e in t["in_raw"]:
+            try:
+                terms = parse_pattern_multiset(e, self.symbols)
+            except UnsupportedNet as not_a_pattern:
+                # Not a pattern: an expression over variables bound elsewhere,
+                # evaluated once the binding is complete.
+                try:
+                    code, trees = self._compile_input_expression(e)
+                except UnsupportedNet as exc:
+                    raise UnsupportedNet(f"{not_a_pattern}; as an expression: "
+                                         f"{exc}")
+                t["in_expr"].append((index[g], code))
+                expr_trees.extend(trees)
+                continue
+            t["in"].append((index[g], _name_wildcards(terms, where)))
         out_trees = []
         compiled_out = []
         for g, e in t["out_raw"]:
@@ -409,7 +462,7 @@ class ColouredNet:
             out_trees.extend(trees)
         t["out"] = compiled_out
 
-        if not t["in"]:
+        if not t["in"] and not t["in_expr"]:
             raise UnsupportedNet(f"{where} has no input arc "
                                  "(it would be enabled forever)")
 
@@ -429,7 +482,7 @@ class ColouredNet:
         t["flat_in"] = flat
 
         used = set()
-        for tree in guard_trees + out_trees:
+        for tree in guard_trees + out_trees + expr_trees:
             try:
                 used |= free_variables(tree)
             except MLError as exc:
@@ -448,6 +501,38 @@ class ColouredNet:
             domains.append((name, values))
         t["free_vars"] = free
         t["domains"] = domains
+
+    # Method to compile an input arc that is not a pattern.
+    def _compile_input_expression(self, text: str):
+        """Compile an input inscription as an expression to evaluate later.
+
+        Args:
+            text (str): The inscription.
+
+        Returns:
+            tuple: ``(code, expression trees)``; ``code(env)`` gives the
+            multiset (or single token) the arc takes.
+
+        Raises:
+            UnsupportedNet: When it does not compile as an expression either.
+        """
+        terms, trees = self.compile_output(text)
+
+        def taken(env, terms=terms):
+            total = MultiSet()
+            for count, code in terms:
+                number = count if isinstance(count, int) else count(env)
+                value = code(env)
+                part = MultiSet()
+                for token in _tokens(number, value):
+                    part = MultiSet({**part.counts,
+                                     token: part.counts.get(token, 0) + 1})
+                merged = dict(total.counts)
+                for token, c in part.items():
+                    merged[token] = merged.get(token, 0) + c
+                total = MultiSet(merged)
+            return total
+        return taken, trees
 
     # Method to build the initial marking, optionally with another input.
     def initial_marking(self, token=None, places=None) -> tuple:
@@ -504,9 +589,9 @@ class ColouredNet:
         terms, _trees = self.compile_output(text)
         tokens: List[Any] = []
         for count, value in terms:
-            number = count if isinstance(count, int) else count({})
             try:
-                tokens.extend([_canon(value({}))] * int(number))
+                number = count if isinstance(count, int) else count({})
+                tokens.extend(_tokens(number, value({})))
             except MLError as exc:
                 raise UnsupportedNet(f"initial marking {text!r}: {exc}")
         return tokens
@@ -558,8 +643,29 @@ class ColouredNet:
         inputs = t["flat_in"]
         guard = t["guard"]
         domains = t["domains"]
+        expr_arcs = t["in_expr"]
 
-        def accept(env):
+        def available_for_expressions(env, used):
+            # The expression arcs take their multisets on top of what the
+            # pattern arcs took; each must be present in full.
+            taken: Dict[int, collections.Counter] = {
+                p: collections.Counter(c) for p, c in used.items()}
+            for pidx, code in expr_arcs:
+                try:
+                    wanted = code(env)
+                except MLError as exc:
+                    raise UnsupportedNet(f"{t['name']}: input arc: {exc}")
+                have = collections.Counter(marking[pidx])
+                have.subtract(taken.get(pidx, {}))
+                for token, count in wanted.items():
+                    if have[token] < count:
+                        return False
+                    taken.setdefault(pidx, collections.Counter())[token] += count
+            return True
+
+        def accept(env, used):
+            if expr_arcs and not available_for_expressions(env, used):
+                return
             if guard is not None:
                 try:
                     if not guard(env):
@@ -578,19 +684,19 @@ class ColouredNet:
                         f"{t['name']} has more than {MAX_BINDINGS} binding "
                         "elements in one marking")
 
-        def complete(env):
+        def complete(env, used):
             if not domains:
-                accept(env)
+                accept(env, used)
                 return
             names = [name for name, _values in domains]
             for combination in itertools.product(*[v for _n, v in domains]):
                 extended = dict(env)
                 extended.update(zip(names, combination))
-                accept(extended)
+                accept(extended, used)
 
         def rec(i, env, used):
             if i == len(inputs):
-                complete(env)
+                complete(env, used)
                 return
             pidx, pattern = inputs[i]
             available = collections.Counter(marking[pidx])
@@ -655,17 +761,21 @@ class ColouredNet:
         new = [list(tokens) for tokens in marking]
         for pidx, pattern in t["flat_in"]:
             new[pidx].remove(_instantiate(pattern, env))
+        for pidx, code in t["in_expr"]:
+            for token, count in code(env).items():
+                for _ in range(count):
+                    new[pidx].remove(token)
         for pidx, terms in t["out"]:
             for count, code in terms:
                 try:
                     number = count if isinstance(count, int) else count(env)
-                    value = _canon(code(env))
+                    tokens = _tokens(number, code(env))
                 except MLError as exc:
                     raise UnsupportedNet(f"{t['name']}: output arc: {exc}")
                 except Exception as exc:                       # noqa: BLE001
                     raise UnsupportedNet(f"{t['name']}: output arc could not "
                                          f"be evaluated ({exc})")
-                new[pidx].extend([value] * int(number))
+                new[pidx].extend(tokens)
         return tuple(tuple(sorted(tokens)) for tokens in new)
 
 
@@ -696,6 +806,8 @@ def _name_wildcards(terms, where):
             return (tag, [rename(p) for p in pattern[1]])
         if tag == "pcons":
             return ("pcons", rename(pattern[1]), rename(pattern[2]))
+        if tag == "pcon":
+            return ("pcon", pattern[1], rename(pattern[2]))
         if tag == "precord":
             return ("precord", [(lab, rename(p)) for lab, p in pattern[1]])
         return pattern
@@ -726,4 +838,6 @@ def _instantiate(pattern, env):
         return tuple(_instantiate(p, env) for p in pattern[1])
     if tag == "pcons":
         return (_instantiate(pattern[1], env),) + _instantiate(pattern[2], env)
+    if tag == "pcon":
+        return IndexValue(pattern[1], _instantiate(pattern[2], env))
     raise UnsupportedNet(f"cannot rebuild the token matched by {tag!r}")

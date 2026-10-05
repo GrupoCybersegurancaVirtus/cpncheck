@@ -12,10 +12,18 @@ being interpreted node by node, so the occurrence-graph search stays fast: the
 tree is walked once, at compile time, and firing a binding element then costs
 one call per node.
 
-What is deliberately absent: references, exceptions, ``while``, user-defined
-datatypes and pattern matching over constructors other than lists. An
-expression using them raises :class:`MLError`, which the caller turns into a
-refusal to analyse the net -- never into a guess.
+Multisets are values: ``2`x``, ``ms1 ++ ms2``, ``ms1 -- ms2`` and ``empty``
+may appear anywhere, so ``if ok then 1`p else empty`` is an expression like any
+other. Names a net declares as constants (the values of an enumeration colour
+set) and constructors (``u`` of ``index u with 1..n``) are passed to the parser
+as *symbols*, because a pattern cannot tell ``e`` the constant from ``e`` a
+variable without knowing the declarations -- and reading a constant as a
+variable would make an input arc accept any token.
+
+What is deliberately absent: references, exceptions, ``while``, and
+user-defined datatypes. An expression using them raises :class:`MLError`,
+which the caller turns into a refusal to analyse the net -- never into a
+guess.
 """
 
 import re
@@ -23,6 +31,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "MLError",
+    "MultiSet",
+    "EnumValue",
+    "IndexValue",
+    "IndexConstructor",
     "parse_expression",
     "parse_pattern",
     "parse_declarations",
@@ -52,7 +64,8 @@ KEYWORDS = {
 
 #: Operators, longest first so that ``<=`` is not read as ``<`` then ``=``.
 OPERATORS = [
-    "=>", "->", "<=", ">=", "<>", "::", "++", "@", "^", "+", "-", "*", "/",
+    "=>", "->", "<=", ">=", "<>", "::", "++", "--", "@", "^^", "^", "+", "-", "*",
+    "/",
     "<", ">", "=", "|", ":", ",", ";", "(", ")", "[", "]", "{", "}", "#", "~",
     "`", "_",
 ]
@@ -137,9 +150,13 @@ def tokenize(text: str) -> List[Tuple[str, Any, int]]:
 #: Binary operators, with their SML precedence and associativity.
 BINOPS = {
     "orelse": (1, "left"), "andalso": (2, "left"),
+    # Multisets: ++ and -- bind loosest, so 2`x ++ 1`y is (2`x) ++ (1`y); the
+    # coefficient binds tighter than a comparison and looser than arithmetic,
+    # so (n+1)`x and 2*k`x read as written.
+    "++": (3, "left"), "--": (3, "left"), "`": (4.5, "right"),
     "=": (4, "left"), "<>": (4, "left"), "<": (4, "left"), ">": (4, "left"),
     "<=": (4, "left"), ">=": (4, "left"),
-    "::": (5, "right"), "@": (5, "right"),
+    "::": (5, "right"), "@": (5, "right"), "^^": (5, "right"),
     "+": (6, "left"), "-": (6, "left"), "^": (6, "left"),
     "*": (7, "left"), "/": (7, "left"), "div": (7, "left"), "mod": (7, "left"),
 }
@@ -158,16 +175,20 @@ class Parser:
     """
 
     # Method to start parsing a token stream.
-    def __init__(self, tokens, source=""):
+    def __init__(self, tokens, source="", symbols=None):
         """Create the parser.
 
         Args:
             tokens (list): Tokens from :func:`tokenize`.
             source (str): The original text, for error messages.
+            symbols (dict, optional): Declared constants and constructors,
+                ``name -> value``; a value that is an
+                :class:`IndexConstructor` makes the name a constructor.
         """
         self.tokens = tokens
         self.pos = 0
         self.source = source
+        self.symbols = symbols or {}
 
     # Method to look at the current token.
     def peek(self):
@@ -540,6 +561,11 @@ class Parser:
         """
         kind, value, _ = self.next()
         if kind == "id":
+            symbol = self.symbols.get(value, _MISSING)
+            if isinstance(symbol, IndexConstructor):
+                return ("pcon", value, self.pattern_atom())
+            if symbol is not _MISSING:
+                return ("plit", symbol)          # a declared constant
             return ("pvar", value)
         if kind in ("int", "real", "str"):
             return ("plit", value)
@@ -591,28 +617,35 @@ class Parser:
     def multiset(self):
         """Parse ``2`x ++ 1`y``, the form of an arc inscription.
 
-        A term without a coefficient is one token, which is how CPN Tools
-        lets a plain expression stand for a singleton multiset.
+        The inscription is one expression; its top-level ``++`` and the
+        coefficient operator are then read off as terms, so a simple
+        inscription keeps the shape ``[(coefficient, value), ...]``. A term
+        without a coefficient is one token, which is how CPN Tools lets a
+        plain expression stand for a singleton multiset -- and a term whose
+        value is itself a multiset (``if ok then 1`p else empty``) is
+        evaluated as one.
 
         Returns:
             list: ``(coefficient expression or None, value expression)``.
         """
-        terms = []
-        while True:
-            start = self.pos
-            coefficient = None
-            try:
-                candidate = self.expression(6)
-                if self.peek()[0] == "op" and self.peek()[1] == "`":
-                    self.next()
-                    coefficient = candidate
-                else:
-                    self.pos = start
-            except MLError:
-                self.pos = start
-            terms.append((coefficient, self.expression()))
-            if not self.accept("op", "++"):
-                return terms
+        return _terms_of(self.expression())
+
+
+# Function to read the top-level terms of a multiset expression.
+def _terms_of(tree) -> List[Tuple[Any, Any]]:
+    """Split ``a ++ b`` and ``n`x`` at the top of a tree into terms.
+
+    Args:
+        tree (tuple): An expression tree.
+
+    Returns:
+        list: ``(coefficient tree or None, value tree)`` pairs.
+    """
+    if tree[0] == "binop" and tree[1] == "++":
+        return _terms_of(tree[2]) + _terms_of(tree[3])
+    if tree[0] == "binop" and tree[1] == "`":
+        return [(tree[2], tree[3])]
+    return [(None, tree)]
 
 
 # ---------------------------------------------------------------------------
@@ -620,11 +653,12 @@ class Parser:
 # ---------------------------------------------------------------------------
 
 # Function to parse one expression.
-def parse_expression(text: str):
+def parse_expression(text: str, symbols=None):
     """Parse a complete CPN ML expression.
 
     Args:
         text (str): The source.
+        symbols (dict, optional): Declared constants and constructors.
 
     Returns:
         tuple: The expression tree.
@@ -632,7 +666,7 @@ def parse_expression(text: str):
     Raises:
         MLError: On a syntax error or trailing input.
     """
-    parser = Parser(tokenize(text), text)
+    parser = Parser(tokenize(text), text, symbols)
     tree = parser.expression()
     if parser.peek()[0] != "end":
         raise MLError(f"unexpected {parser.peek()[1]!r} after an expression "
@@ -641,11 +675,12 @@ def parse_expression(text: str):
 
 
 # Function to parse one pattern.
-def parse_pattern(text: str):
+def parse_pattern(text: str, symbols=None):
     """Parse a complete CPN ML pattern.
 
     Args:
         text (str): The source.
+        symbols (dict, optional): Declared constants and constructors.
 
     Returns:
         tuple: The pattern tree.
@@ -653,7 +688,7 @@ def parse_pattern(text: str):
     Raises:
         MLError: On a syntax error or trailing input.
     """
-    parser = Parser(tokenize(text), text)
+    parser = Parser(tokenize(text), text, symbols)
     tree = parser.pattern()
     if parser.peek()[0] != "end":
         raise MLError(f"unexpected {parser.peek()[1]!r} after a pattern "
@@ -662,11 +697,12 @@ def parse_pattern(text: str):
 
 
 # Function to parse a multiset expression.
-def parse_multiset(text: str):
+def parse_multiset(text: str, symbols=None):
     """Parse an arc inscription, which is a multiset of expressions.
 
     Args:
         text (str): The source.
+        symbols (dict, optional): Declared constants and constructors.
 
     Returns:
         list: ``(coefficient tree or None, value tree)`` per term.
@@ -674,7 +710,7 @@ def parse_multiset(text: str):
     Raises:
         MLError: On a syntax error or trailing input.
     """
-    parser = Parser(tokenize(text), text)
+    parser = Parser(tokenize(text), text, symbols)
     terms = parser.multiset()
     if parser.peek()[0] != "end":
         raise MLError(f"unexpected {parser.peek()[1]!r} after a multiset "
@@ -683,7 +719,7 @@ def parse_multiset(text: str):
 
 
 # Function to parse a block of declarations.
-def parse_declarations(text: str) -> List[Tuple]:
+def parse_declarations(text: str, symbols=None) -> List[Tuple]:
     """Parse ``val`` and ``fun`` declarations, skipping anything else.
 
     CPN Tools keeps colour sets and variables as structured XML and only uses
@@ -693,6 +729,7 @@ def parse_declarations(text: str) -> List[Tuple]:
 
     Args:
         text (str): The source of one or more declarations.
+        symbols (dict, optional): Declared constants and constructors.
 
     Returns:
         list: ``("val", pattern, expression)`` and ``("fun", name, expression)``
@@ -700,7 +737,7 @@ def parse_declarations(text: str) -> List[Tuple]:
         could not be read.
     """
     out: List[Tuple] = []
-    parser = Parser(tokenize(text), text)
+    parser = Parser(tokenize(text), text, symbols)
     while parser.peek()[0] != "end":
         start = parser.pos
         try:
@@ -746,6 +783,276 @@ def _skip_to_semicolon(parser: Parser) -> None:
 # tuple of them and two markings are the same node exactly when they are equal.
 # So an ML list is a Python tuple, a record is a tuple in declared field order,
 # and unit is the empty tuple.
+
+
+#: Marks a name absent from the symbol table (None is a legitimate value).
+_MISSING = object()
+
+
+# Class holding a multiset value.
+class MultiSet:
+    """A finite multiset: value -> positive count.
+
+    Immutable and hashable, so it can be compared and used as a value; a
+    place's marking is still a sorted tuple of tokens, and a multiset an arc
+    produces is expanded into it.
+
+    Attributes:
+        counts (dict): ``value -> count``, counts positive.
+    """
+
+    __slots__ = ("counts", "_hash")
+
+    # Method to build a multiset.
+    def __init__(self, counts=None):
+        """Create the multiset.
+
+        Args:
+            counts (dict, optional): ``value -> count``; zero counts dropped.
+
+        Raises:
+            MLError: On a negative count.
+        """
+        clean = {}
+        for value, count in (counts or {}).items():
+            if count < 0:
+                raise MLError(f"negative coefficient {count} for {value!r}")
+            if count:
+                clean[value] = count
+        self.counts = clean
+        self._hash = None
+
+    # Method to list the elements with their counts.
+    def items(self):
+        """``(value, count)`` pairs.
+
+        Returns:
+            iterable: The pairs.
+        """
+        return self.counts.items()
+
+    # Method to give the total number of elements.
+    def __len__(self):
+        """Number of elements, counting multiplicity.
+
+        Returns:
+            int: The size.
+        """
+        return sum(self.counts.values())
+
+    # Method to compare two multisets.
+    def __eq__(self, other):
+        """Equality as multisets.
+
+        Args:
+            other: Another value.
+
+        Returns:
+            bool: Whether both hold the same elements equally often.
+        """
+        return isinstance(other, MultiSet) and self.counts == other.counts
+
+    # Method to hash the multiset.
+    def __hash__(self):
+        """Hash compatible with equality.
+
+        Returns:
+            int: The hash.
+        """
+        if self._hash is None:
+            self._hash = hash(frozenset(self.counts.items()))
+        return self._hash
+
+    # Method to render the multiset as CPN ML.
+    def __repr__(self):
+        """Render as ``2`x ++ 1`y``.
+
+        Returns:
+            str: The text.
+        """
+        if not self.counts:
+            return "empty"
+        return " ++ ".join(f"{c}`{v!r}" for v, c in self.counts.items())
+
+
+# Function to coerce a value into a multiset.
+def _as_multiset(value) -> "MultiSet":
+    """A multiset as is; any other value as the singleton holding it.
+
+    Args:
+        value: A value.
+
+    Returns:
+        MultiSet: The multiset.
+    """
+    return value if isinstance(value, MultiSet) else MultiSet({value: 1})
+
+
+# Function to build n copies of a value.
+def _ms_scale(count, value) -> "MultiSet":
+    """``n`x``: ``n`` copies of ``x``, or ``n`` times a multiset ``x``.
+
+    Args:
+        count (int): The coefficient.
+        value: The element, or a multiset to scale.
+
+    Returns:
+        MultiSet: The result.
+
+    Raises:
+        MLError: When the coefficient is not a non-negative integer.
+    """
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise MLError(f"a coefficient must be a non-negative integer, not "
+                      f"{count!r}")
+    if isinstance(value, MultiSet):
+        return MultiSet({v: c * count for v, c in value.items()})
+    return MultiSet({value: count})
+
+
+# Function to add two multisets.
+def _ms_union(left, right) -> "MultiSet":
+    """``a ++ b``.
+
+    Args:
+        left: A multiset (or a value, as a singleton).
+        right: A multiset (or a value, as a singleton).
+
+    Returns:
+        MultiSet: The sum.
+    """
+    out = dict(_as_multiset(left).counts)
+    for value, count in _as_multiset(right).items():
+        out[value] = out.get(value, 0) + count
+    return MultiSet(out)
+
+
+# Function to subtract one multiset from another.
+def _ms_diff(left, right) -> "MultiSet":
+    """``a -- b``, defined only when ``b`` is contained in ``a``.
+
+    Args:
+        left: A multiset.
+        right: A multiset.
+
+    Returns:
+        MultiSet: The difference.
+
+    Raises:
+        MLError: When ``b`` is not contained in ``a``, as in CPN ML.
+    """
+    out = dict(_as_multiset(left).counts)
+    for value, count in _as_multiset(right).items():
+        if out.get(value, 0) < count:
+            raise MLError(f"cannot subtract {count}`{value!r}: not contained")
+        out[value] -= count
+    return MultiSet(out)
+
+
+# Class holding a value of an enumeration colour set.
+class EnumValue(str):
+    """A constant of ``colset E = with a | b``.
+
+    A string subclass, so it hashes, compares and sorts like its name, and is
+    shown as the bare name rather than quoted.
+    """
+
+    __slots__ = ()
+
+    # Method to render the constant.
+    def __repr__(self):
+        """The bare name.
+
+        Returns:
+            str: The constant as CPN ML writes it.
+        """
+        return str(self)
+
+
+# Class holding a value of an index colour set.
+class IndexValue(tuple):
+    """``u(3)`` of ``colset U = index u with 1..10``: a (constructor, index) pair.
+
+    A tuple subclass, so it hashes and orders; the coloured net's ``_canon``
+    must not turn it into a plain tuple.
+    """
+
+    __slots__ = ()
+
+    # Method to build an index value.
+    def __new__(cls, constructor: str, index: int):
+        """Create the value.
+
+        Args:
+            constructor (str): The constructor name.
+            index (int): The index.
+
+        Returns:
+            IndexValue: The value.
+        """
+        return super().__new__(cls, (constructor, index))
+
+    # Method to render the value.
+    def __repr__(self):
+        """Render as ``u(3)``.
+
+        Returns:
+            str: The value as CPN ML writes it.
+        """
+        return f"{self[0]}({self[1]})"
+
+
+# Class building the values of an index colour set.
+class IndexConstructor:
+    """The constructor ``u`` of ``index u with low..high``: ``u(i)`` is a value.
+
+    Attributes:
+        name (str): The constructor.
+        low (int|None): Lowest index, once the declarations are evaluated.
+        high (int|None): Highest index.
+    """
+
+    __slots__ = ("name", "low", "high")
+
+    # Method to create the constructor.
+    def __init__(self, name: str, low=None, high=None):
+        """Create the constructor.
+
+        Args:
+            name (str): The constructor name.
+            low (int, optional): Lowest index.
+            high (int, optional): Highest index.
+        """
+        self.name = name
+        self.low = low
+        self.high = high
+
+    # Method to apply the constructor.
+    def __call__(self, index):
+        """Build ``name(index)``.
+
+        Args:
+            index (int): The index.
+
+        Returns:
+            IndexValue: The value.
+
+        Raises:
+            MLError: When the index is outside the declared range.
+        """
+        if self.low is not None and not self.low <= index <= self.high:
+            raise MLError(f"{self.name}({index}) is outside "
+                          f"{self.low}..{self.high}")
+        return IndexValue(self.name, index)
+
+    # Method to render the constructor.
+    def __repr__(self):
+        """Return a short representation.
+
+        Returns:
+            str: ``<constructor u>``.
+        """
+        return f"<constructor {self.name}>"
 
 
 # Class holding a function value with the environment it closed over.
@@ -863,6 +1170,10 @@ def match_pattern(pattern, value, env: Optional[Dict] = None,
         if out is None:
             return None
         return match_pattern(pattern[2], value[1:], out, fields)
+    if tag == "pcon":
+        if not isinstance(value, IndexValue) or value[0] != pattern[1]:
+            return None
+        return match_pattern(pattern[2], value[1], env, fields)
     if tag == "precord":
         if not isinstance(value, tuple):
             return None
@@ -898,6 +1209,8 @@ def pattern_variables(pattern) -> set:
         return out
     if tag == "pcons":
         return pattern_variables(pattern[1]) | pattern_variables(pattern[2])
+    if tag == "pcon":
+        return pattern_variables(pattern[2])
     if tag == "precord":
         out = set()
         for _label, sub in pattern[1]:
@@ -1027,6 +1340,10 @@ _BINARY: Dict[str, Callable] = {
     ">=": lambda a, b: a >= b,
     "::": lambda a, b: (a,) + b,
     "@": lambda a, b: a + b,
+    "^^": lambda a, b: a + b,                # CPN ML list concatenation
+    "`": _ms_scale,
+    "++": _ms_union,
+    "--": _ms_diff,
 }
 
 
@@ -1246,6 +1563,7 @@ def _curry(function):
 
 #: The standard names a net may use without declaring them.
 PRELUDE: Dict[str, Any] = {
+    "empty": MultiSet(),
     "abs": abs,
     "real": float,
     "floor": lambda x: int(__import__("math").floor(x)),

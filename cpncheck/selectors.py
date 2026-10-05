@@ -275,7 +275,8 @@ def inputs_of(net, transitions: Sequence[int]) -> Tuple[int, ...]:
         tuple: Place indices, sorted.
     """
     return tuple(sorted({p for ti in transitions
-                         for p, _ in net.transitions[ti]["in"]}))
+                         for p, _ in (net.transitions[ti]["in"]
+                                      + net.transitions[ti].get("in_expr", []))}))
 
 
 # Class holding a labelled family of element sets.

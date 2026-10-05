@@ -18,6 +18,7 @@ import pytest
 
 from cpncheck.coloured import ColouredNet, UnsupportedNet
 from cpncheck.net import CPNNet
+from cpncheck.statespace import build_state_space
 
 SAMPLES_DIR = os.environ.get(
     "CPNTOOLS_SAMPLES",
@@ -29,11 +30,26 @@ IDS = [os.path.relpath(p, SAMPLES_DIR) for p in SAMPLES]
 pytestmark = pytest.mark.skipif(not SAMPLES,
                                 reason="CPN Tools sample models not found")
 
+#: Samples CPN Tools itself cannot run headless, and why.
+CPNTOOLS_CANNOT_RUN = {
+    "DiningPhilosophers_COMM_Mon.cpn":
+        "opens a Comms/CPN connection when it is loaded and waits for it",
+}
+
+#: Budget for the comparison: a larger graph is skipped, since CPN Tools would
+#: spend just as long (or forever, for an infinite one) on it.
+ORACLE_BUDGET = 20_000
+
 
 @pytest.mark.parametrize("path", SAMPLES, ids=IDS)
 def test_a_sample_is_read_or_refused_by_name(path):
+    """Reading and exploring raise nothing but a refusal with a reason.
+
+    Some constructs only show when an expression is evaluated, so the
+    occurrence graph is built too, on a small budget.
+    """
     try:
-        ColouredNet(CPNNet(path))
+        build_state_space(ColouredNet(CPNNet(path)), max_nodes=5_000)
     except UnsupportedNet as exc:
         assert str(exc).strip(), "a refusal must say why"
 
@@ -44,13 +60,19 @@ def test_a_sample_is_read_or_refused_by_name(path):
 def test_a_supported_sample_agrees_with_cpntools(path):
     from cpncheck.oracle import CPNToolsOracle, compare_state_space
 
+    reason = CPNTOOLS_CANNOT_RUN.get(os.path.basename(path))
+    if reason:
+        pytest.skip(f"CPN Tools cannot run it headless: {reason}")
     try:
-        ColouredNet(CPNNet(path))
+        ss = build_state_space(ColouredNet(CPNNet(path)), ORACLE_BUDGET)
     except UnsupportedNet:
         pytest.skip("not supported yet")
+    if not ss.complete:
+        pytest.skip(f"more than {ORACLE_BUDGET} markings")
     oracle = CPNToolsOracle()
     if oracle.missing():
         pytest.skip("CPN Tools engine incomplete")
-    report = compare_state_space(path, oracle=oracle)
+    report = compare_state_space(path, oracle=oracle, max_nodes=ORACLE_BUDGET,
+                                 timeout=600)
     assert not report["errors"], report["errors"]
     assert report["agree"], report["rows"]

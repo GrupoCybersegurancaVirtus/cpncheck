@@ -121,10 +121,12 @@ class Dependency:
         for t in net.transitions:
             ins = collections.defaultdict(collections.Counter)
             outs = collections.defaultdict(collections.Counter)
-            for (pidx, _terms), (_gid, text) in zip(t["in"], t["in_raw"]):
-                ins[pidx][" ".join(str(text).split())] += 1
-            for (pidx, _terms), (_gid, text) in zip(t["out"], t["out_raw"]):
-                outs[pidx][" ".join(str(text).split())] += 1
+            # From the raw arcs: an input arc may be a pattern or an
+            # expression, and both take tokens from their place.
+            for gid, text in t["in_raw"]:
+                ins[net.index[gid]][" ".join(str(text).split())] += 1
+            for gid, text in t["out_raw"]:
+                outs[net.index[gid]][" ".join(str(text).split())] += 1
             tested = {p for p in ins if outs.get(p) == ins[p]}
             self.pre.append(frozenset(ins))
             self.takes.append(frozenset(set(ins) - tested))

@@ -26,6 +26,12 @@ from cpncheck.statespace import build_state_space          # noqa: E402
 
 DEFAULT_SAMPLES = r"C:\Program Files (x86)\CPN Tools\Sample CPN Models"
 
+#: Samples CPN Tools itself cannot run headless, and why.
+CANNOT_RUN = {
+    "DiningPhilosophers_COMM_Mon.cpn":
+        "opens a Comms/CPN connection when it is loaded",
+}
+
 #: Refusal messages grouped into the roadmap item that would lift them.
 CATEGORIES = [
     (r"timed|time inscription", "timed nets (phase 4)"),
@@ -69,7 +75,7 @@ def main(argv=None) -> int:
     """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--samples", default=DEFAULT_SAMPLES)
-    ap.add_argument("--max-nodes", type=int, default=200_000)
+    ap.add_argument("--max-nodes", type=int, default=20_000)
     ap.add_argument("--oracle", action="store_true",
                     help="compare every supported net with CPN Tools")
     args = ap.parse_args(argv)
@@ -88,7 +94,7 @@ def main(argv=None) -> int:
             return 1
 
     reasons = collections.Counter()
-    supported = bugs = 0
+    supported = bugs = over_budget = agreed = 0
     for path in paths:
         name = os.path.relpath(path, args.samples)
         try:
@@ -103,22 +109,40 @@ def main(argv=None) -> int:
             print(f"  BUG       {name:52s} {type(exc).__name__}: {exc}")
             continue
         t0 = time.perf_counter()
-        ss = build_state_space(net, args.max_nodes)
+        try:
+            ss = build_state_space(net, args.max_nodes)
+        except UnsupportedNet as exc:
+            # Some constructs only show when an expression is evaluated.
+            message = " ".join(str(exc).split())
+            reasons[categorise(message)] += 1
+            print(f"  refused   {name:52s} {message[:90]}")
+            continue
         supported += 1
         line = (f"  checked   {name:52s} {ss.n_nodes} nodes"
                 f"{'' if ss.complete else ' (budget)'}, {ss.n_arcs} arcs, "
                 f"{len(ss.dead)} dead, {time.perf_counter() - t0:.1f}s")
-        if oracle is not None:
+        if not ss.complete:
+            over_budget += 1
+        if oracle is not None and not ss.complete:
+            line += "  CPN Tools: not compared (over budget)"
+        elif oracle is not None and os.path.basename(path) in CANNOT_RUN:
+            line += f"  CPN Tools: cannot run it ({CANNOT_RUN[os.path.basename(path)]})"
+        elif oracle is not None:
             from cpncheck.oracle import compare_state_space
             report = compare_state_space(path, oracle=oracle,
                                          max_nodes=args.max_nodes)
+            if report["agree"]:
+                agreed += 1
             line += "  CPN Tools: " + ("agrees" if report["agree"] else
                                        f"DISAGREES {report['rows']}")
         print(line)
 
     print()
-    print(f"{supported} of {len(paths)} sample nets checked, "
+    print(f"{supported} of {len(paths)} sample nets explored "
+          f"({over_budget} over the budget of {args.max_nodes} markings), "
           f"{len(paths) - supported - bugs} refused, {bugs} reader bug(s)")
+    if oracle is not None:
+        print(f"{agreed} agree with CPN Tools")
     for label, count in reasons.most_common():
         print(f"  {count:3d}  {label}")
     return 1 if bugs else 0

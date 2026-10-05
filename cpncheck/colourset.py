@@ -21,7 +21,8 @@ import itertools
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .cpnml import (PRELUDE, MLError, compile_expression, parse_declarations,
+from .cpnml import (PRELUDE, EnumValue, IndexConstructor, IndexValue, MLError,
+                    MultiSet, compile_expression, parse_declarations,
                     parse_expression)
 
 __all__ = ["ColourSet", "Declarations"]
@@ -40,17 +41,21 @@ class ColourSet:
     Attributes:
         name (str): Its name.
         kind (str): ``unit``, ``bool``, ``int``, ``real``, ``string``,
-            ``enum``, ``index``, ``product``, ``record``, ``list``,
+            ``enum``, ``index`` (a bounded int), ``indexed`` (``index u with
+            1..n``, values ``u(i)``), ``product``, ``record``, ``list``,
             ``subset``, ``alias`` or ``unknown``.
         parts (list): Component colour set names, for products and records.
         labels (list): Field names, for records.
         values (list): The explicit values, for enumerations and subsets.
-        base (str): The underlying colour set, for aliases and subsets.
+        base (str): The underlying colour set, for aliases and subsets; the
+            constructor name, for an ``indexed`` colour set.
+        bounds (tuple): The two ML texts of an ``indexed`` colour set's range,
+            evaluated once the net's values are known.
         timed (bool): Whether the colour set is timed.
     """
 
     __slots__ = ("name", "kind", "parts", "labels", "values", "base", "timed",
-                 "_domain")
+                 "bounds", "_domain")
 
     # Method to build a colour set description.
     def __init__(self, name, kind, parts=None, labels=None, values=None,
@@ -73,6 +78,7 @@ class ColourSet:
         self.values = list(values or [])
         self.base = base
         self.timed = timed
+        self.bounds: Tuple[str, ...] = ()
         self._domain: Any = False              # False means "not computed"
 
     # Method to compute the values of the colour set.
@@ -110,14 +116,15 @@ class ColourSet:
             return (False, True)
         if self.kind in ("enum", "index"):
             return tuple(self.values)
+        if self.kind == "indexed":
+            return tuple(self.values) if self.values else None
         if self.kind == "alias":
             other = sets.get(self.base)
             return other.domain(sets) if other else None
         if self.kind == "subset":
-            if self.values:
-                return tuple(self.values)
-            other = sets.get(self.base)
-            return other.domain(sets) if other else None
+            # Only once the predicate or the listing has been evaluated;
+            # before that the subset is unknown, never its base.
+            return tuple(self.values) if self.values else None
         if self.kind in ("product", "record"):
             parts = []
             for name in self.parts:
@@ -182,18 +189,20 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
         return ColourSet(name, mapped, timed=timed)
     if kind == "enum":
         return ColourSet(name, "enum",
-                         values=[(i.text or "").strip() for i in body.findall("id")],
+                         values=[EnumValue((i.text or "").strip())
+                                 for i in body.findall("id")],
                          timed=timed)
     if kind == "index":
-        values = _with_values(body)
-        try:
-            low, high = int(values[0]), int(values[1])
-        except (TypeError, ValueError, IndexError):
+        # colset U = index u with 1..10: the bounds are <ml> children, and may
+        # be declared names (with NoOfSites), so they are evaluated later.
+        bounds = [("".join(ml.itertext())).strip() for ml in body.findall("ml")]
+        bounds = bounds or _with_values(body)
+        ctor = body.find("id")
+        if len(bounds) != 2 or ctor is None or not (ctor.text or "").strip():
             return ColourSet(name, "unknown", timed=timed)
-        if high - low > MAX_DOMAIN:
-            return ColourSet(name, "unknown", timed=timed)
-        return ColourSet(name, "index", values=list(range(low, high + 1)),
-                         timed=timed)
+        colset = ColourSet(name, "indexed", base=ctor.text.strip(), timed=timed)
+        colset.bounds = tuple(bounds)
+        return colset
     if kind == "product":
         return ColourSet(name, "product",
                          parts=[(i.text or "").strip() for i in body.findall("id")],
@@ -211,12 +220,52 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
         return ColourSet(name, "list",
                          base=(base.text or "").strip() if base is not None else None,
                          timed=timed)
-    if kind in ("alias", "subset"):
+    if kind == "alias":
         base = body.find("id")
         return ColourSet(name, kind,
                          base=(base.text or "").strip() if base is not None else None,
-                         values=_with_values(body), timed=timed)
+                         timed=timed)
+    if kind == "subset":
+        # subset B by f / subset B with [v1, v2]: both are ML evaluated once
+        # the net's values are known; until then the subset has no domain, so
+        # nothing can range over the whole of B by mistake.
+        base = body.find("id")
+        colset = ColourSet(name, kind,
+                           base=(base.text or "").strip() if base is not None
+                           else None, timed=timed)
+        by = body.find("by")
+        if by is not None:
+            colset.bounds = ("by", " ".join("".join(ml.itertext()).strip()
+                                            for ml in by.findall("ml")))
+        elif body.find("with") is not None:
+            colset.bounds = ("with", " ".join(_with_values(body)))
+        return colset
     return ColourSet(name, "unknown", timed=timed)
+
+
+# Function to multiply multisets into a multiset of tuples.
+def _product_of_multisets(parts) -> MultiSet:
+    """``PR.mult (ms1, ms2, ...)``: every combination, counts multiplied.
+
+    Args:
+        parts (tuple): One multiset (or single value) per component.
+
+    Returns:
+        MultiSet: The product.
+    """
+    lists = []
+    for part in parts:
+        items = (list(part.items()) if isinstance(part, MultiSet)
+                 else [(part, 1)])
+        lists.append(items)
+    out: Dict[Any, int] = {}
+    for combination in itertools.product(*lists):
+        value = tuple(v for v, _c in combination)
+        count = 1
+        for _v, c in combination:
+            count *= c
+        out[value] = out.get(value, 0) + count
+    return MultiSet(out)
 
 
 # Function to read the ML texts of a with clause.
@@ -244,9 +293,11 @@ class Declarations:
         variables (dict): ``variable -> colour set name``.
         fields (dict): ``record field label -> index``, for ``#label`` in an
             expression.
-        globals (dict): Names every expression can use: the prelude, then the
-            net's own ``val`` and ``fun`` declarations, then whatever the
-            caller added.
+        globals (dict): Names every expression can use: the prelude, the
+            constants and constructors of the colour sets, the net's own
+            ``val`` and ``fun`` declarations, then whatever the caller added.
+        symbols (dict): The constants (enumeration values) and constructors
+            (of ``index`` colour sets) a pattern must not read as variables.
         problems (list): Declarations that could not be read, as text.
     """
 
@@ -265,6 +316,7 @@ class Declarations:
         self.variables: Dict[str, str] = {}
         self.fields: Dict[str, int] = {}
         self.globals: Dict[str, Any] = dict(PRELUDE)
+        self.symbols: Dict[str, Any] = {}
         self.problems: List[str] = []
         try:
             root = ET.parse(path).getroot()
@@ -274,7 +326,10 @@ class Declarations:
         if root is not None:
             self._read_colours(root)
             self._read_variables(root)
+            self._declare_colour_values()
             self._read_values(root)
+            self._resolve_indexed()
+            self._resolve_subsets()
         if prelude:
             self.globals.update(prelude)
 
@@ -296,6 +351,99 @@ class Declarations:
                         f"field {label!r} is at a different position in two "
                         "record colour sets; #" + label + " is ambiguous")
                 self.fields.setdefault(label, index)
+
+    # Method to make the colour sets' constants and functions available.
+    def _declare_colour_values(self) -> None:
+        """Enumeration constants, index constructors and ``CS.all()``.
+
+        These go into :attr:`symbols` too, so that the parser reads ``e`` in a
+        pattern as the constant, not as a fresh variable.
+        """
+        for colset in self.colsets.values():
+            if colset.kind == "enum":
+                for value in colset.values:
+                    self.symbols[str(value)] = value
+            elif colset.kind == "indexed":
+                self.symbols[colset.base] = IndexConstructor(colset.base)
+        self.globals.update(self.symbols)
+        for name, colset in self.colsets.items():
+            self.globals[f"{name}.all"] = self._all_of(colset)
+            if colset.kind == "product":
+                self.globals[f"{name}.mult"] = _product_of_multisets
+
+    # Method to build the CS.all() function of a colour set.
+    def _all_of(self, colset: "ColourSet"):
+        """``CS.all ()``: every value of the colour set, as a multiset.
+
+        Args:
+            colset (ColourSet): The colour set.
+
+        Returns:
+            callable: The function; it raises :class:`MLError` for an infinite
+            colour set.
+        """
+        def all_values(_unit, colset=colset, sets=self.colsets):
+            values = colset.domain(sets)
+            if values is None:
+                raise MLError(f"{colset.name}.all: the colour set is not finite")
+            return MultiSet({v: 1 for v in values})
+        return all_values
+
+    # Method to evaluate the ranges of the index colour sets.
+    def _resolve_indexed(self) -> None:
+        """Evaluate ``low..high`` of every ``index`` colour set.
+
+        Done after the values are read, because a bound may be a declared name
+        (``index S with 1..NoOfSites``). A range that cannot be evaluated
+        leaves the colour set without a domain, which refuses any variable
+        that would have to range over it.
+        """
+        for colset in self.colsets.values():
+            if colset.kind != "indexed":
+                continue
+            try:
+                low, high = (int(self.evaluate(b)) for b in colset.bounds)
+            except (MLError, TypeError, ValueError) as exc:
+                self.problems.append(f"{colset.name}: range {colset.bounds}: "
+                                     f"{exc}")
+                continue
+            if not 0 <= high - low <= MAX_DOMAIN:
+                continue
+            ctor = self.symbols[colset.base]
+            ctor.low, ctor.high = low, high
+            colset.values = [IndexValue(colset.base, i)
+                             for i in range(low, high + 1)]
+            colset._domain = False
+
+    # Method to evaluate the subset colour sets.
+    def _resolve_subsets(self) -> None:
+        """Compute the values of ``subset B by f`` and ``subset B with [...]``.
+
+        ``by f`` keeps the values of ``B`` for which ``f`` holds; ``with``
+        lists them. A subset that cannot be evaluated keeps no domain, so a
+        variable ranging over it is refused rather than given ``B``'s values.
+        """
+        for colset in self.colsets.values():
+            if colset.kind != "subset" or not colset.bounds:
+                continue
+            how, text = colset.bounds
+            try:
+                if how == "by":
+                    base = self.colsets.get(colset.base)
+                    values = base.domain(self.colsets) if base else None
+                    if values is None:
+                        continue
+                    keep = self.evaluate(text)
+                    colset.values = [v for v in values if keep(v)]
+                else:
+                    listed = self.evaluate(text)
+                    colset.values = list(listed.counts if isinstance(
+                        listed, MultiSet) else listed)
+            except (MLError, TypeError) as exc:
+                self.problems.append(f"{colset.name}: subset {how} {text!r}: "
+                                     f"{exc}")
+                continue
+            colset._domain = False
 
     # Method to read every variable declaration.
     def _read_variables(self, root) -> None:
@@ -331,7 +479,7 @@ class Declarations:
             if not text:
                 continue
             try:
-                entries = parse_declarations(text)
+                entries = parse_declarations(text, self.symbols)
             except MLError as exc:
                 self.problems.append(f"{text.splitlines()[0][:60]}: {exc}")
                 continue
@@ -399,8 +547,8 @@ class Declarations:
         Raises:
             MLError: When it cannot be parsed, compiled or run.
         """
-        return compile_expression(parse_expression(text), self.globals,
-                                  self.fields)({})
+        return compile_expression(parse_expression(text, self.symbols),
+                                  self.globals, self.fields)({})
 
     # Method to render the declarations for debugging.
     def __repr__(self):

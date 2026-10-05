@@ -32,14 +32,17 @@ def _text(parent, tag, value):
 
 
 def write_net(path, pages, colsets=("INT",), variables=("n", "x"),
-              instances=True, timed=(), fusion=None):
+              instances=True, timed=(), fusion=None, colors=(), typed_vars=None,
+              ml=()):
     """Write the parts of a ``.cpn`` file CPNCheck reads.
 
     ``pages`` maps a page name to ``{"places": [...], "trans": [...],
     "arcs": [...]}``: a place is ``(id, name, colset, initmark or None,
     fusion set or None)``, a transition ``(id, name, guard or None, extras)``
     with ``extras`` a dict of further inscriptions (``code``, ``time``...), an
-    arc ``(transition id, place id, orientation, inscription)``.
+    arc ``(transition id, place id, orientation, inscription)``. ``colors``
+    are extra ``<color>`` elements as XML text, ``typed_vars`` maps a variable
+    to its colour set, ``ml`` holds ``val``/``fun`` declarations.
     """
     root = ET.Element("workspaceElements")
     cpnet = ET.SubElement(root, "cpnet")
@@ -50,10 +53,18 @@ def write_net(path, pages, colsets=("INT",), variables=("n", "x"),
         ET.SubElement(color, "int")
         if name in timed:
             ET.SubElement(color, "timed")
+    for i, xml in enumerate(colors):
+        globbox.append(ET.fromstring(xml))
     var = ET.SubElement(globbox, "var", id="v1")
     ET.SubElement(ET.SubElement(var, "type"), "id").text = colsets[0]
     for v in variables:
         ET.SubElement(var, "id").text = v
+    for i, (v, colset) in enumerate((typed_vars or {}).items()):
+        tv = ET.SubElement(globbox, "var", id=f"tv{i}")
+        ET.SubElement(ET.SubElement(tv, "type"), "id").text = colset
+        ET.SubElement(tv, "id").text = v
+    for i, text in enumerate(ml):
+        ET.SubElement(globbox, "ml", id=f"ml{i}").text = text
     for pname, page in pages.items():
         pel = ET.SubElement(cpnet, "page", id=f"page_{pname}")
         ET.SubElement(pel, "pageattr", name=pname)

@@ -46,7 +46,7 @@ the reader. The table, by roadmap item:
 | 4 | multisets inside `if`/`case` | phase 3 |
 | 3 | code segments | not planned |
 
-Because of this, **the multiset and pattern items of phase 3 come before
+Because of this, **the multiset and pattern items of phase 3 came before
 phase 2**: they are what turns the samples into a measured result.
 
 ## Phase 2 -- the tree domain leaves the core
@@ -60,20 +60,41 @@ phase 2**: they are what turns the samples into a measured result.
 * User properties without Python: a query file or a CLI option.
 * The generated ASK-CTL script stops saying "pyRuleAnalyzer".
 
-## Phase 3 -- more of CPN ML
+## Phase 3 -- more of CPN ML (the sample-blocking items: done)
 
-* Input arc expressions that are not patterns (`Chopsticks(p)`, `Mes(s)`,
-  `if ... then 1`x else empty`), evaluated once the binding is known.
-* Multisets inside `if`/`case` on output arcs.
+Done, each pinned down in `tests/test_cpnml_nets.py`:
+
+* Multisets are values anywhere in an expression: `n`x`, `++`, `--`, `empty`,
+  so `if ok then 1`x else empty` works on any arc and in declarations.
+* Input arcs that are not patterns (`Chopsticks(p)`, `Mes(s)`, `case x of p =>
+  2`e | q => 1`e`) are evaluated once the binding is complete, and the
+  transition is enabled only if the place holds that multiset on top of what
+  the pattern arcs take.
+* Enumeration constants are values, and a pattern naming one matches that
+  constant only (a mutation test checks that reading it as a variable is
+  caught).
+* `index` colour sets (`index u with 1..NoOfU`, bounds may be declared names),
+  `u(i)` as value and as pattern, and functions defined over such patterns.
+* `subset B by f` and `subset B with [...]` range over their members only; one
+  that cannot be evaluated has no domain. (Before, a subset silently ranged
+  over all of `B`.)
+* `CS.all()`, `CS.mult` for products, list concatenation `^^`.
+
+Result on the samples: **15 of 24 read and explored, 0 reader errors; the 7
+whose occurrence graph fits in 20 000 markings agree with CPN Tools on nodes,
+arcs, SCCs, dead and home markings** (DiningPhilosophers, its ASK-CTL variant,
+DistributedDataBase and its OG variant, both ResourceAllocation OG variants,
+SimpleProtocol_OG). Of the other 8 explored, 7 exceed the budget (some are
+infinite, like SimpleProtocol without its limit place) and one,
+DiningPhilosophers_COMM_Mon, cannot be run by CPN Tools headless. Refused: 6
+timed nets, 3 with code segments.
+
+Still to do in this phase:
+
 * Variables bound by the guard (`[x = f(y)]`).
-* `index` colour sets (`colset U = index u with 1..10`, values `u(i)`), read
-  today as "unknown".
-* Enumeration constants (`colset E = with e`) as values. They are unknown
-  today, so every net using them is refused; once they are known, an input
-  pattern naming a constant must match that constant only -- read as a
-  variable it would match any token.
-* Functions defined by constructor patterns (`fun f (ph(i)) = ...`).
 * User-declared datatypes; transition priorities.
+* Code segments without side effects (their `output` variables bind like a
+  guard); code with side effects stays refused.
 
 ## Phase 4 -- timed nets
 
