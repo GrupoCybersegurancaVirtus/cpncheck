@@ -48,7 +48,7 @@ from .result import ModelCheckResult, PropertyResult
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
 #: Accepted values of the ``reduction`` argument of :meth:`CPNModelChecker.check`.
-REDUCTIONS = (None, "stubborn", "sweep")
+REDUCTIONS = (None, "stubborn", "sweep", "equivalence", "symmetry")
 
 __all__ = ["CPNModelChecker", "check_cpn"]
 
@@ -463,6 +463,66 @@ class CPNModelChecker:
                 spec=self.catalog.get(pid))
         return res, sc.stats()
 
+    # Method to evaluate the properties on the quotient of an equivalence.
+    def _evaluate_quotient(self, sample=None, equivalence=None, symmetry=None
+                           ) -> Tuple[Dict[str, PropertyResult], Dict[str, Any]]:
+        """Decide the properties of one input on a quotient graph.
+
+        Args:
+            sample (optional): The input, or None for the file's own marking.
+            equivalence (optional): ``"time"`` (the default for a timed net),
+                or a canonical-form function of the marking.
+            symmetry (optional): A symmetry specification; when given, the
+                symmetry equivalence is used (:mod:`cpncheck.symmetry`).
+
+        Returns:
+            tuple: ``({id: PropertyResult}, statistics)``.
+        """
+        from .equivalence import (EquivalenceError, QuotientChecker,
+                                  time_equivalence, user_equivalence)
+        from .symmetry import symmetry_equivalence
+
+        initial = None
+        if sample is not None:
+            initial = self.cnet.initial_marking(self.as_sample(sample),
+                                                places=self.input_places)
+        if symmetry is not None:
+            eq = symmetry_equivalence(self.cnet, symmetry, initial)
+        elif equivalence is None or equivalence == "time":
+            eq = time_equivalence(self.cnet)
+        elif callable(equivalence):
+            eq = user_equivalence(equivalence)
+        else:
+            raise EquivalenceError(f"unknown equivalence {equivalence!r}: use "
+                                   "'time' or a canonical-form function")
+        qc = QuotientChecker(self.cnet, eq, self.groups, initial=initial,
+                             max_nodes=self.max_nodes)
+        res: Dict[str, PropertyResult] = {}
+        for pid, formula in self.formulas.items():
+            t0 = time.perf_counter()
+            holds, cex, reason = qc.decide(formula)
+            if cex is not None:
+                cex.input = sample
+                cex.data["input_places"] = self.input_places
+            detail = str(cex) if cex is not None else reason
+            if holds is not None and not eq.exact:
+                detail = (detail + "; " if detail else "") + \
+                    f"conditional on {eq.name} ({qc.consistency.summary()})"
+            res[pid] = PropertyResult(pid, holds, detail,
+                                      time.perf_counter() - t0,
+                                      spec=self.catalog.get(pid), cex=cex)
+        for pid, reason in self.unavailable.items():
+            res[pid] = PropertyResult(pid, None, reason,
+                                      spec=self.catalog.get(pid))
+        for pid in self.scc_props:
+            res[pid] = PropertyResult(
+                pid, None, f"not preserved by {eq.name} (a class can be a home "
+                "class while none of its markings is a home marking)",
+                spec=self.catalog.get(pid))
+        stats = qc.stats()
+        stats["reduction"] = "symmetry" if symmetry is not None else "equivalence"
+        return res, stats
+
     # Method to decide the home-marking property with the reduced graphs.
     def _home_reduced(self, rc: ReducedChecker, pid: str, sample,
                       plans: Dict[str, str]) -> PropertyResult:
@@ -522,7 +582,8 @@ class CPNModelChecker:
               max_nodes: Optional[int] = None, verbose: bool = False,
               reduction: Optional[str] = None,
               options: Optional[Dict[str, Any]] = None,
-              progress=None) -> ModelCheckResult:
+              progress=None, equivalence=None, symmetry=None
+              ) -> ModelCheckResult:
         """Verify every applicable property.
 
         Args:
@@ -546,6 +607,12 @@ class CPNModelChecker:
             progress (optional): For ``reduction="sweep"``: the progress
                 measure, as text (``"tokens(Done) - tokens(Todo)"``) or a
                 function of the marking; a timed net defaults to its clock.
+            equivalence (optional): For ``reduction="equivalence"``:
+                ``"time"`` (the default; timed nets) or a canonical-form
+                function of the marking (:mod:`cpncheck.equivalence`).
+            symmetry (optional): For ``reduction="symmetry"``: the colour
+                sets to permute, e.g. ``{"PH,CS": "rotation"}``
+                (:mod:`cpncheck.symmetry`).
 
         Returns:
             ModelCheckResult: Verdicts, statistics and the expected CPN Tools
@@ -572,6 +639,18 @@ class CPNModelChecker:
         for i, x in enumerate(xs):
             if verbose:
                 print(f"  [mc] input {i + 1}/{len(xs)}")
+            if reduction in ("equivalence", "symmetry"):
+                if reduction == "symmetry" and symmetry is None:
+                    raise ValueError("reduction='symmetry' needs symmetry=, "
+                                     "the colour sets to permute")
+                part, rstats = self._evaluate_quotient(
+                    x, equivalence, symmetry if reduction == "symmetry" else None)
+                if not rstats["complete"]:
+                    warnings.append(f"the quotient graph exceeded "
+                                    f"{self.max_nodes} classes: no verdicts")
+                stats = stats or rstats
+                self._merge(merged, part)
+                continue
             if reduction == "sweep":
                 part, rstats = self._evaluate_sweep(x, progress)
                 if not rstats["complete"]:
@@ -755,7 +834,8 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
               reduction: Optional[str] = None,
               properties=None,
               options: Optional[Dict[str, Any]] = None,
-              progress=None) -> ModelCheckResult:
+              progress=None, equivalence=None,
+              symmetry=None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -768,10 +848,13 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
         profile (Profile, optional): The profile to use.
         prelude (dict, optional): Names added to the net's ML declarations.
         reduction (str, optional): ``"stubborn"`` for partial-order
-            reduction, ``"sweep"`` for the sweep-line method.
+            reduction, ``"sweep"`` for the sweep-line method,
+            ``"equivalence"`` or ``"symmetry"`` for a quotient graph.
         properties (optional): User properties (:mod:`cpncheck.query`).
         options (dict, optional): Profile settings.
         progress (optional): The sweep-line progress measure.
+        equivalence (optional): ``"time"`` or a canonical-form function.
+        symmetry (optional): The colour sets to permute.
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
@@ -782,4 +865,5 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
     return checker.check(samples=samples, reference=reference,
                          test_samples=test_samples,
                          verbose=verbose, reduction=reduction,
-                         progress=progress)
+                         progress=progress, equivalence=equivalence,
+                         symmetry=symmetry)

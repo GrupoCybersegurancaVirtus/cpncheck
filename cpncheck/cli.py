@@ -71,7 +71,9 @@ def _cmd_check(args):
     result = check_cpn(args.net, options=_options(args.option),
                        max_nodes=args.max_nodes, verbose=args.verbose,
                        reduction=args.reduction, properties=props or None,
-                       progress=args.progress)
+                       progress=args.progress,
+                       equivalence=args.equivalence,
+                       symmetry=args.symmetry)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(result.to_dict(), fh, indent=2)
@@ -201,10 +203,18 @@ def build_parser():
                    help="a setting for the net's profile, e.g. "
                         "class_labels=0,1,2; repeatable")
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
-    p.add_argument("--reduction", choices=["stubborn", "sweep"], default=None,
-                   help="stubborn: decide the properties on stubborn-set "
-                        "reduced graphs; sweep: the sweep-line method "
-                        "(properties of single markings only)")
+    p.add_argument("--reduction",
+                   choices=["stubborn", "sweep", "equivalence", "symmetry"],
+                   default=None,
+                   help="stubborn: stubborn-set reduced graphs; sweep: the "
+                        "sweep-line method (properties of single markings); "
+                        "equivalence: the quotient by time equivalence "
+                        "(timed nets); symmetry: the quotient by --symmetry")
+    p.add_argument("--equivalence", choices=["time"], default=None,
+                   help="the equivalence of --reduction equivalence")
+    p.add_argument("--symmetry", action="append", metavar="SETS=KIND",
+                   help="colour sets permuted together and how, e.g. "
+                        "PH,CS=rotation or PH=all; repeatable")
     p.add_argument("--progress", metavar="MEASURE",
                    help='sweep-line progress measure, e.g. "tokens(Done) - '
                         'tokens(Todo)" or "clock" (the default of a timed net)')
@@ -256,6 +266,7 @@ def main(argv=None):
     """
     from .coloured import UnsupportedNet
     from .query import QueryError
+    from .equivalence import EquivalenceError
     from .sweepline import ProgressError
 
     args = build_parser().parse_args(argv)
@@ -265,6 +276,8 @@ def main(argv=None):
         print(f"cpncheck: property error: {exc}", file=sys.stderr)
     except ProgressError as exc:
         print(f"cpncheck: progress measure: {exc}", file=sys.stderr)
+    except EquivalenceError as exc:
+        print(f"cpncheck: reduction: {exc}", file=sys.stderr)
     except UnsupportedNet as exc:
         print(f"cpncheck: the net is not supported: {exc}", file=sys.stderr)
     return 2

@@ -168,19 +168,22 @@ ProtocolWithTimer and TimedResourceAlloc (both infinite) are explored now.
 The 8 refusals are all outside the target: 4 code segments with side effects
 or full SML, 3 random values, 1 real-valued time.
 
-## State-space reduction
+## State-space reduction (done)
 
 Every technique declares which properties it preserves; the checker uses it
-only for those and says, per property, which one decided it. Each is validated
-like the stubborn sets: every verdict against the full graph on small nets and
-on mutants, and against CPN Tools.
+only for those and says, per property, why the others have no verdict. Each
+is validated like the stubborn sets: every verdict against the full graph on
+small nets, samples and mutants. CPN Tools 4.0.1 has none of them, so the
+reference is CPNCheck's full graph, itself compared with CPN Tools.
 
 | Technique | Status | Needs from the user | Preserves |
 |---|---|---|---|
 | Stubborn sets (`reduction="stubborn"`) | **done** | nothing | per property (deadlock / safety / stutter graphs) |
 | Sweep-line, generalised (`reduction="sweep"`) | **done** | a progress measure (`--progress`), or nothing for a timed net (its clock) | `AG ψ`, `EF χ`, `!EF χ` of state predicates, dead markings; any measure is sound |
-| Equivalence | planned | the equivalence relation; consistency is tested, not proved | what the relation respects; verdicts marked conditional |
-| Symmetry | planned | the permutable colour sets; the soundness criteria are checked | properties invariant under the symmetry |
+| Equivalence (`reduction="equivalence"`) | **done** | nothing for time equivalence (exact; refused if `time()` is read), or a canonical form (consistency tested, verdicts conditional) | CTL over properties the relation respects; not home markings |
+| Symmetry (`reduction="symmetry"`) | **done** | the permutable colour sets (`PH,CS=rotation`); initial marking and every explored representative checked | CTL whose propositions do not single out a permuted value; not home markings |
 
-Combinations (sweep-line with stubborn sets, symmetry with stubborn sets) come
-after each technique is validated on its own.
+Every technique is validated on its own against the full graph (see the
+README). Combinations (sweep-line with stubborn sets, symmetry with stubborn
+sets or sweep-line) are not implemented. The Portuguese write-up
+`docs/reducao-estados-pt.pdf` explains how each works.

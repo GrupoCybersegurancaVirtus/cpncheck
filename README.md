@@ -227,6 +227,48 @@ stored, in one sweep. `tests/test_sweepline.py` compares every verdict with
 the full graph on both fixture nets and all their mutants, under no measure, a
 token count and an arbitrary non-monotone function.
 
+## State explosion: equivalence and symmetry
+
+```bash
+cpncheck check timed.cpn --reduction equivalence            # time equivalence
+cpncheck check dining.cpn --reduction symmetry --symmetry PH,CS=rotation
+```
+
+```python
+check_cpn("dining.cpn", reduction="symmetry", symmetry={"PH,CS": "rotation"})
+check_cpn("model.cpn", reduction="equivalence", equivalence=my_canonical_form)
+```
+
+Both explore one representative per class of equivalent markings — the
+*quotient* graph (`cpncheck/equivalence.py`, `cpncheck/symmetry.py`). It
+gives the full graph's CTL verdicts when the equivalence is *consistent*
+(equivalent markings reach the same classes) and the property cannot tell
+equivalent markings apart.
+
+* **Time equivalence** (timed nets): markings equal up to a shift of time are
+  one class. Exact unless an inscription reads `time()`, in which case it is
+  refused by name. A net whose graph is infinite only because time goes on
+  gets a finite quotient; on the TimedResourceAlloc variant, 16 114 markings
+  become 970 classes.
+* **Symmetry**: the colour sets whose values may be permuted, all at once or
+  by rotation, several together by position (`PH,CS=rotation`). The
+  conditions are checked, not assumed: the initial marking must be invariant
+  under each generator, and every explored representative is tested — the
+  successors of `g(M)` must be the images of those of `M`. A guard that breaks
+  the symmetry fails the test and the verdicts are withheld; a property that
+  singles out a permuted value (`has(Eat, ph(1))`) gets no verdict. Dining
+  philosophers: 11 markings, 3 classes; DistributedDataBase: 109 markings, 11
+  classes.
+* **Your own canonical form**: consistency is tested on sampled markings,
+  not proved, and the verdicts are reported as conditional on the test.
+
+Not preserved by any of them: the home-marking property (a class can be a
+home class while none of its markings is a home marking) and the graph
+statistics. `tests/test_equivalence.py` compares every verdict with the full
+graph, and checks that a symmetry the net does not have, an equivalence that
+merges different behaviours, and a property naming a permuted value all end
+without a verdict rather than with a wrong one.
+
 ## Two claims, and how they are held up
 
 **Sensitivity.** `cpncheck mutants` derives one mutant per property — a small

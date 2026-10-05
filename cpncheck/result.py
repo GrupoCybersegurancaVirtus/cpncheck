@@ -230,6 +230,12 @@ class ModelCheckResult:
                          f"{st.get('peak_stored')} stored, {st.get('regress')} "
                          f"regress arc(s), {st.get('dead')} dead marking(s)"
                          f"{'' if st.get('complete', True) else ' (STOPPED EARLY)'}")
+        elif st.get("reduction") in ("equivalence", "symmetry"):
+            lines.append(f"  reduction        : {st.get('equivalence')}; "
+                         f"{st.get('classes')} classes, {st.get('arcs')} arcs, "
+                         f"{st.get('dead')} dead class(es)"
+                         f"{'' if st.get('complete', True) else ' (INCOMPLETE)'}")
+            lines.append(f"  consistency      : {st.get('consistency')}")
         elif st.get("reduction"):
             per = ", ".join(f"{k} x{n}" for k, n in st.get("per_kind", {}).items())
             lines.append(f"  reduction        : stubborn sets; {st.get('graphs')} "

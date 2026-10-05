@@ -1128,13 +1128,16 @@ Verificação \code{ctl} é \textbf{por entrada}
 Explosão de estados
   & Acima de \code{max\_nodes} as propriedades de espaço de estados ficam
     \emph{sem veredicto} --- e ``sem veredicto'' nunca deve ser lido como
-    ``aprovado''. \\[4pt]
+    ``aprovado''. Quatro reduções opcionais adiam esse limite (conjuntos
+    teimosos, \emph{sweep-line}, equivalência e simetria); ver o documento
+    sobre explosão de estados. \\[4pt]
 PC é teste
   & Conformidade nas entradas dadas, não prova de equivalência funcional. \\[4pt]
 O fragmento CPN ML tem limites
-  & Redes temporizadas (\code{@+}), conjuntos de fusão além de port/socket, e
-    tipos de dados declarados pelo usuário não são suportados. O que está fora
-    levanta \code{UnsupportedNet} em vez de ser mal interpretado. \\[4pt]
+  & Tempo real (\code{@++}), valores aleatórios, canais síncronos e código com
+    efeitos colaterais não são suportados (redes temporizadas com tempo
+    inteiro, prioridades e conjuntos de fusão são). O que está fora levanta
+    \code{UnsupportedNet} em vez de ser mal interpretado. \\[4pt]
 Variável livre sobre domínio infinito
   & A rede é \textbf{recusada}, nomeando a variável. Prosseguir verificaria uma
     rede menor do que a desenhada. \\[4pt]

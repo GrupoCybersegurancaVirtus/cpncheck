@@ -239,6 +239,15 @@ escolhido precisa (i) explorar uma característica presente no sistema e (ii)
 preservar as propriedades que se quer verificar. Os três foram avaliados com
 esses dois critérios contra as redes medidas acima.
 
+\begin{nota}
+Esta avaliação é sobre as redes de árvores do \pyra{}, e continua valendo
+para elas. Desde então o \cpn{} passou a verificar redes quaisquer, e para
+redes de outros tipos --- protocolos, sistemas com componentes idênticos,
+redes temporizadas --- as três técnicas fazem diferença. Por isso elas também
+foram implementadas, cada uma com o que preserva declarado e testado; o
+capítulo~\ref{cap:outras} descreve como funcionam.
+\end{nota}
+
 \section{Sweep-line}
 
 \textbf{Ideia.} Se existe uma \emph{medida de progresso} que nunca diminui ao
@@ -839,7 +848,10 @@ ser combinados. Para D2a, a combinação natural é com o \emph{sweep-line}: o
 grafo completo dessa propriedade é acíclico e tem medida de progresso trivial,
 então poderia ser percorrido camada a camada com memória proporcional à camada
 mais larga. Isso troca o limite de memória por tempo, sem mudar o número de
-estados; não foi implementado.
+estados. O \emph{sweep-line} foi implementado depois
+(capítulo~\ref{cap:outras}), mas a combinação não: D2a é uma propriedade de
+caminho (\code{AF}), e o \emph{sweep-line} sozinho só decide propriedades de
+marcações isoladas.
 \end{nota}
 
 % ============================================================================
@@ -959,6 +971,182 @@ por ordem parcial muda a classe de crescimento.}
 \end{figure}
 
 % ============================================================================
+\chapter{As outras técnicas, para redes quaisquer}
+\label{cap:outras}
+% ============================================================================
+
+Os capítulos anteriores tratam dos conjuntos teimosos porque é a técnica que
+resolve a explosão das redes de árvores. Para outras redes, os três métodos do
+capítulo~8 de Jensen \& Kristensen (\emph{sweep-line}, equivalência e
+simetria) estão no \cpn{}. Valem para eles as mesmas regras dos conjuntos
+teimosos:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item cada técnica declara o que preserva, e uma propriedade fora disso fica
+        \emph{sem veredicto}, com o motivo no relatório --- nunca com um
+        veredicto do grafo errado;
+  \item cada uma é validada contra o grafo completo, em redes pequenas o
+        bastante para que ele exista, inclusive em casos construídos para que
+        a técnica \emph{não} se aplique.
+\end{itemize}
+
+\section{\emph{Sweep-line} generalizado}
+
+\textbf{Ideia.} Uma \emph{medida de progresso} atribui um número a cada
+marcação. As marcações são exploradas em ordem crescente de progresso, e as que
+ficaram para trás da ``linha'' são apagadas da memória: se a medida nunca
+diminui, nenhuma ocorrência volta a elas. O pico de memória passa a ser o de
+uma janela que se move pelo grafo, não o do grafo inteiro.
+
+\textbf{O problema da versão básica.} Se alguma ocorrência leva a uma marcação
+de progresso \emph{menor} (um arco de regressão), a marcação de destino pode já
+ter sido apagada: a versão básica a exploraria de novo sem fim, ou a perderia.
+A versão \emph{generalizada} (Kristensen \& Mailund, 2002) guarda para sempre
+os destinos dos arcos de regressão --- as marcações \emph{persistentes} --- e
+começa uma nova varredura a partir deles quando a atual termina. Como cada
+marcação persistente inicia no máximo uma varredura, o método termina em todo
+grafo finito \emph{com qualquer medida}. Uma medida ruim custa tempo
+(marcações exploradas mais de uma vez), nunca um veredicto errado. Por isso a
+medida não precisa ser verificada.
+
+\textbf{O que decide.} Toda marcação alcançável é visitada, e no momento da
+visita seus sucessores são calculados. Logo, propriedades de marcações
+isoladas são decididas exatamente: \code{AG}~$\psi$, \code{EF}~$\chi$ e
+$\neg$\code{EF}~$\chi$, com $\psi$ e $\chi$ predicados de estado, que podem
+falar de \code{dead} e de habilitação. Propriedades de caminho (\code{AF},
+\code{EG}, \code{AG EF}) e a de \emph{home marking} não são decididas, porque
+os arcos não são guardados. Pelo mesmo motivo uma violação é informada pela
+marcação que viola, sem o caminho até ela.
+
+\textbf{A medida.} É uma soma de termos com sinal: número de fichas de um
+lugar, soma dos valores inteiros das fichas de um lugar, o relógio, ou uma
+constante --- ou uma função qualquer da marcação. Uma rede temporizada não
+precisa de nenhuma: o relógio nunca volta, então não há regressão.
+
+\textbf{Números.} Numa variante finita do TimedResourceAlloc (amostra do
+\cpntools{}), 16\,114 marcações são exploradas com no máximo 2\,293
+armazenadas ao mesmo tempo (14\%), em uma única varredura, encontrando as
+mesmas 2\,510 marcações mortas do grafo completo.
+
+\textbf{Validação.} Em todas as amostras que cabem no orçamento e nas duas
+redes de árvores com todos os seus mutantes, os vereditos foram comparados com
+os do grafo completo sob três medidas: uma constante (sem esquecer nada), uma
+contagem de fichas, e uma função arbitrária da marcação, escolhida para ser o
+pior caso (dezenas de regressões). Nenhuma divergência.
+
+\section{Equivalência}
+
+\textbf{Ideia.} Uma \emph{forma canônica} escolhe um representante para cada
+classe de marcações equivalentes, e só os representantes são explorados: o
+resultado é o \emph{grafo quociente}. Ele é correto quando a equivalência é
+\emph{consistente} --- marcações equivalentes alcançam, em um passo, as mesmas
+classes --- e quando as propriedades não distinguem marcações equivalentes.
+Nessas condições quociente e grafo completo são bissimilares, e todo veredicto
+CTL vale nos dois.
+
+\textbf{Equivalência de tempo.} Embutida, para redes temporizadas. Duas
+marcações são equivalentes quando diferem só por um deslocamento no tempo: o
+representante tem relógio 0, e cada carimbo vira o atraso relativo ao relógio
+(0 para uma ficha que já está pronta, porque estar pronta há mais ou há menos
+tempo não muda nada). Ela é \emph{exata} sob duas condições, ambas
+verificadas: nenhuma inscrição lê o relógio com \code{time()} (senão a rede é
+recusada para esta técnica, nomeando as transições), e nenhuma propriedade
+observa carimbos (nenhuma das que o \cpn{} sabe expressar observa). Uma rede
+cujo grafo é infinito só porque o tempo avança passa a ter quociente finito.
+Na variante do TimedResourceAlloc, 16\,114 marcações viram 970 classes.
+
+\textbf{Equivalência do usuário.} Qualquer função que leve uma marcação a um
+representante. A consistência, então, não é provada, e sim \emph{testada}:
+para centenas de marcações encontradas durante a exploração, compara-se o
+conjunto de classes que a marcação alcança com o que seu representante
+alcança. É um conjunto, não um multiconjunto: duas fichas prontas de mesmo
+valor com carimbos diferentes dão dois sucessores na marcação original e um só
+no representante, sem que o comportamento mude. Os vereditos saem marcados
+como \emph{condicionais}, com o resultado do teste. Se o teste encontra uma
+divergência, nenhum veredicto é dado. Uma equivalência deliberadamente errada
+(``esquecer quem está comendo'' no jantar dos filósofos) é pega pelo teste.
+
+\textbf{O que não preserva.} A propriedade de \emph{home marking}: uma classe
+pode ser alcançável de todas as outras sem que nenhuma de suas marcações o
+seja (no quociente por simetria, ``um filósofo comendo'' é uma classe; no grafo
+completo são cinco marcações diferentes). E as estatísticas, que descrevem o
+quociente.
+
+\section{Simetria}
+
+\textbf{Ideia.} Em muitas redes, os valores de um conjunto de cores são
+tratados todos do mesmo jeito: todo filósofo se comporta igual, todo site de
+um banco distribuído também. Renomear esses valores leva uma marcação
+alcançável a outra com o mesmo comportamento. A classe é a \emph{órbita} da
+marcação sob o grupo de permutações, e o representante é a menor imagem.
+
+\textbf{A especificação.} O usuário diz quais conjuntos de cores podem ser
+permutados e como: todas as permutações, ou só rotações. Conjuntos cujos
+valores estão ligados entre si são permutados \emph{juntos}, por posição: o
+filósofo $i$ usa os pauzinhos $i$ e $i+1$, então filósofos e pauzinhos giram
+juntos. A permutação age pelo tipo de cada lugar --- dentro de produtos,
+registros, listas e subconjuntos, desde que o subconjunto seja fechado sob o
+grupo (os pares de sites distintos do banco distribuído são).
+
+\textbf{A admissibilidade é verificada, não suposta.} As condições de Jensen
+\& Kristensen são testadas: a marcação inicial tem de ser invariante sob cada
+gerador do grupo (senão a especificação é recusada); e, para cada representante
+explorado $M$ e cada gerador $g$, os sucessores de $g(M)$ têm de ser
+exatamente as imagens dos sucessores de $M$. É um teste sobre o grafo
+explorado, não uma prova para outras marcações iniciais; por isso os
+vereditos também saem como condicionais a ele. Uma guarda ou inscrição que
+quebra a simetria faz esse teste falhar, e os vereditos são retidos. No jantar
+dos filósofos, ``todas as permutações'' é detectado como inválido (só as
+rotações preservam quem é vizinho de quem), e girar os filósofos sem girar os
+pauzinhos também.
+
+\textbf{O que preserva.} Toda propriedade CTL cujas proposições não destacam
+um valor permutado: contagens de fichas, habilitação e marcações mortas são
+invariantes. ``O filósofo 1 come'' não é, e fica sem veredicto com esse
+motivo.
+
+\textbf{Números.} Jantar dos filósofos (5): 11 marcações, 3 classes por
+rotação. Banco distribuído (4 sites): 109 marcações, 11 classes com todas as
+permutações dos sites. Em ambos, todo veredicto decidido coincide com o do
+grafo completo.
+
+\textbf{Por que não nas árvores.} Como no capítulo~\ref{cap:avaliacao}: as
+árvores de uma floresta têm limiares diferentes, então nenhuma permutação delas
+é uma simetria da rede --- e o teste de admissibilidade diria isso.
+
+\section{Restrições comuns}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Relógio e prioridades.} Numa rede temporizada, ou com
+        prioridades, uma transição depende de outras de formas que os arcos
+        não mostram (quem dispara primeiro muda o relógio; quem tem prioridade
+        bloqueia as outras). Os conjuntos teimosos não são usados nelas: essas
+        redes vão sempre para o grafo completo. As outras três técnicas se
+        aplicam.
+  \item \textbf{Combinações} (\emph{sweep-line} com simetria, por exemplo) não
+        foram implementadas: cada técnica foi validada sozinha.
+  \item \textbf{Oráculo.} O \cpntools{} 4.0.1 não tem essas reduções; a
+        referência de cada uma é o grafo completo do próprio \cpn{}, que por
+        sua vez é comparado com o \cpntools{}.
+\end{itemize}
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{4.0cm}>{\raggedright\arraybackslash}p{3.4cm}}
+\toprule
+Técnica & Precisa do usuário & Preserva & Correção \\
+\midrule
+Teimosos & nada & por propriedade (cap.~\ref{cap:preserva}) & teoremas \\
+\emph{Sweep-line} & medida (ou o relógio) & \code{AG}/\code{EF} de predicados de estado, marcações mortas & qualquer medida \\
+Equiv.\ de tempo & nada & CTL sem \emph{home marking} & exata (sem \code{time()}) \\
+Equiv.\ do usuário & forma canônica & CTL sem \emph{home marking} & testada; condicional \\
+Simetria & conjuntos e tipo de grupo & CTL invariante, sem \emph{home marking} & testada em cada representante \\
+\bottomrule
+\end{tabular}
+\caption{As reduções do \cpn{}.}
+\end{table}
+
+% ============================================================================
 \chapter{Uso e limitações}
 \label{cap:uso}
 % ============================================================================
@@ -972,6 +1160,12 @@ verificação do \cpn{} (na API e na linha de comando, como opção
 e no \emph{pipeline} verificado. Nenhuma propriedade, perfil ou rede precisa
 ser alterada: a divisão e a classificação são automáticas e valem para
 qualquer perfil, não só o das redes de árvores.
+
+As técnicas do capítulo~\ref{cap:outras} usam o mesmo parâmetro, com os
+valores \code{"sweep"} (com a medida de progresso em \code{progress}, ou
+\code{-{}-progress}), \code{"equivalence"} (equivalência de tempo, ou uma
+função do usuário em \code{equivalence}) e \code{"symmetry"} (com os conjuntos
+de cores em \code{symmetry}, ou \code{-{}-symmetry PH,CS=rotation}).
 
 \section{Quando usar}
 
@@ -1011,16 +1205,24 @@ qualquer perfil, não só o das redes de árvores.
 \small
 \item C.~Baier, J.-P.~Katoen. \emph{Principles of Model Checking}. MIT Press,
       2008. Capítulo~8 (redução por ordem parcial).
+\item S.~Christensen, L.~M.~Kristensen, T.~Mailund. A sweep-line method for
+      state space exploration. \emph{TACAS 2001}, LNCS 2031, 2001.
 \item E.~M.~Clarke, O.~Grumberg, D.~Kroening, D.~Peled, H.~Veith.
       \emph{Model Checking}, 2.ª ed. MIT Press, 2018.
+\item E.~A.~Emerson, A.~P.~Sistla. Symmetry and model checking.
+      \emph{Formal Methods in System Design} 9, 1996.
 \item R.~Gerth, R.~Kuiper, D.~Peled, W.~Penczek. A partial order approach to
       branching time logic model checking. \emph{Information and Computation}
       150(2), 1999.
 \item P.~Godefroid. \emph{Partial-Order Methods for the Verification of
       Concurrent Systems}. LNCS 1032, Springer, 1996.
+\item K.~Jensen. Condensed state spaces for symmetrical coloured Petri nets.
+      \emph{Formal Methods in System Design} 9, 1996.
 \item K.~Jensen, L.~M.~Kristensen. \emph{Coloured Petri Nets: Modelling and
       Validation of Concurrent Systems}. Springer, 2009. Capítulo~8
       (\emph{Advanced State Space Methods}).
+\item L.~M.~Kristensen, T.~Mailund. A generalised sweep-line method for
+      safety properties. \emph{FME 2002}, LNCS 2391, 2002.
 \item L.~M.~Kristensen, A.~Valmari. Improved question-guided stubborn set
       methods for state properties. \emph{ICATPN 2000}, LNCS 1825, 2000.
 \item D.~Peled. All from one, one for all: on model checking using
