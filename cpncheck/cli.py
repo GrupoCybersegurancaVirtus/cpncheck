@@ -43,7 +43,8 @@ def _cmd_check(args):
     from .checker import check_cpn
 
     result = check_cpn(args.net, class_labels=_labels(args.labels),
-                       max_nodes=args.max_nodes, verbose=args.verbose)
+                       max_nodes=args.max_nodes, verbose=args.verbose,
+                       reduction=args.reduction)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(result.to_dict(), fh, indent=2)
@@ -171,6 +172,8 @@ def build_parser():
     p.add_argument("net")
     p.add_argument("--labels", help="label domain, e.g. 0,1,2")
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
+    p.add_argument("--reduction", choices=["stubborn"], default=None,
+                   help="decide the properties on stubborn-set reduced graphs")
     p.add_argument("--json", help="also write the verdicts as JSON")
     p.add_argument("--latex", action="store_true", help="print a LaTeX table")
     p.add_argument("--trace", action="store_true",

@@ -158,13 +158,21 @@ class Context:
     def enabled_at(self, node: int, transitions) -> List[int]:
         """Transition indices enabled at a node, restricted to a set.
 
+        On a reduced graph (:mod:`cpncheck.reduction`) the arcs are only the
+        expanded binding elements, so the enabling recorded during the search
+        is used instead.
+
         Args:
             node (int): Node id.
             transitions (container): Transition indices of interest.
 
         Returns:
-            list: One entry per outgoing arc, so repeated bindings count twice.
+            list: One entry per enabled binding element, so repeated bindings
+            count twice.
         """
+        enabled = getattr(self.ss, "enabled", None)
+        if enabled is not None:
+            return [ti for ti in enabled[node] if ti in transitions]
         return [ti for ti, _key, _w in self.ss.succ[node] if ti in transitions]
 
 

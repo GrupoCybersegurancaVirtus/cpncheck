@@ -16,6 +16,7 @@ Layers, bottom up:
 :mod:`cpncheck.net`        parse the ``.cpn`` XML
 :mod:`cpncheck.coloured`   compile the CPN ML fragment; flatten; fire
 :mod:`cpncheck.statespace` occurrence graph, SCCs, home markings
+:mod:`cpncheck.reduction`  stubborn-set reduced graphs (partial-order reduction)
 :mod:`cpncheck.ctl`        CTL fixpoints over the occurrence graph
 :mod:`cpncheck.properties` the property catalog
 :mod:`cpncheck.result`     verdicts and reports (text, JSON, LaTeX)

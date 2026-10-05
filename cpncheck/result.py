@@ -208,7 +208,15 @@ class ModelCheckResult:
         lines.append(head)
         lines.append("=" * max(len(head), 76))
         st = self.stats
-        if st.get("nodes") is not None:
+        if st.get("reduction"):
+            per = ", ".join(f"{k} x{n}" for k, n in st.get("per_kind", {}).items())
+            lines.append(f"  reduction        : stubborn sets; {st.get('graphs')} "
+                         f"reduced graph(s) ({per}), {st.get('nodes_total')} "
+                         f"nodes in all, largest {st.get('nodes_max')}"
+                         f"{'' if st.get('complete', True) else ' (SOME INCOMPLETE)'}")
+            lines.append(f"  deadlock graph   : {st['nodes']} nodes, {st['arcs']} "
+                         f"arcs, {st.get('dead')} dead marking(s)")
+        elif st.get("nodes") is not None:
             lines.append(f"  occurrence graph : {st['nodes']} nodes, {st['arcs']} arcs"
                          f"{'' if st.get('complete', True) else ' (INCOMPLETE)'}")
             if st.get("complete", True):
@@ -232,6 +240,9 @@ class ModelCheckResult:
                     row += f"{r.spec.ctl:<41}"
                 row += r.status
                 lines.append(row)
+                plan = st.get("plans", {}).get(r.id)
+                if plan:
+                    lines.append(f"        decided on: {plan}")
                 if r.detail and r.holds is not True:
                     lines.append(f"        -> {r.detail}")
         lines.append("")

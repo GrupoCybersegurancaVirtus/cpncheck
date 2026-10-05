@@ -104,6 +104,45 @@ dead marking; both readings are computed, and the generated ASK-CTL encodes
 `AF φ` as `EV(φ) AND NOT E[¬φ U (dead ∧ ¬φ)]` so CPN Tools answers the textbook
 question.
 
+## State explosion: partial-order reduction
+
+A net made of components that do not interact until the end has an occurrence
+graph that interleaves them in every order. A random forest of `n` trees has
+exactly `2^n + 2` markings, although every order leads to the same vote.
+
+```bash
+cpncheck check model.cpn --reduction stubborn
+```
+
+```python
+result = check_cpn("model.cpn", class_labels=[0, 1, 2], reduction="stubborn")
+```
+
+With `reduction="stubborn"` every property is decided on a *stubborn-set*
+reduced graph (`cpncheck/reduction.py`) that provably gives the full graph's
+verdict. Which reduced graph depends on what the property needs:
+
+| Graph | Conditions | Preserves | Used for |
+|---|---|---|---|
+| `deadlock` | D0–D2 (Valmari) | every dead marking; existence of an infinite run | `AF dead`, `AG(dead → ψ)`, home markings of a terminating net |
+| `safety` | D0–D2 + an up-set for `¬ψ` (Kristensen & Valmari 2000) | reachability of a marking violating `ψ` | `AG ψ`, `!EF χ`, `EF χ` with `ψ`, `χ` propositional |
+| `stutter` | D0–D2 + C2 (one invisible element or all), C3 (cycle proviso), C4 (Gerth et al. 1999) | every CTL-X formula | `AF`, `EF`, `EU`, `AG EF` |
+| `full` | none | everything | whatever the theorems do not cover |
+
+A property is first split — `forall` into its instances, `AG` of a conjunction
+or of a bound on many places into one `AG` per conjunct or per place — because
+a part that observes fewer places reduces more. The report says, per property,
+which graph decided it.
+
+On the tree nets the deadlock graph has `n + 3` markings for `n` trees (a
+forest of 100 trees: 103 instead of about 1.3 × 10^30). One property does not
+reduce: `AF EN(Vote)` observes the output place of every tree, so every leaf is
+visible and none can be reordered — for large forests it is reported without a
+verdict, and the report says why. The reduction is checked the hard way: on
+both fixture nets and all their mutants, every verdict equals the full graph's
+and every reduced counterexample replays (`tests/test_reduction.py`). CPN Tools
+has no such reduction, so `oracle` values are only produced without it.
+
 ## Two claims, and how they are held up
 
 **Sensitivity.** `cpncheck mutants` derives one mutant per property — a small

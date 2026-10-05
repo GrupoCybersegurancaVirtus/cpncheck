@@ -1,0 +1,1035 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+\pgfplotsset{compat=1.17}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds,calc}
+
+\geometry{left=3cm,right=2.7cm,top=2.8cm,bottom=2.8cm}
+
+\definecolor{rule}{RGB}{190,190,185}
+\definecolor{callout}{RGB}{242,244,248}
+\definecolor{accent}{RGB}{20,70,140}
+\definecolor{warm}{RGB}{176,72,32}
+\definecolor{soft}{RGB}{150,150,150}
+\definecolor{good}{RGB}{30,120,70}
+
+\newcommand{\cpn}{\textsc{CPNCheck}}
+\newcommand{\pyra}{\textsc{pyRuleAnalyzer}}
+\newcommand{\cpntools}{CPN~Tools}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\newenvironment{nota}
+  {\par\vspace{6pt}\noindent\begin{tikzpicture}\node[fill=callout,rounded corners=2pt,
+   inner sep=9pt,text width=\dimexpr\linewidth-20pt\relax,align=justify]\bgroup\small}
+  {\egroup;\end{tikzpicture}\par\vspace{6pt}}
+
+\theoremstyle{definition}
+\newtheorem{definicao}{Definição}[chapter]
+\newtheorem{teorema}{Teorema}[chapter]
+\newtheorem{exemplo}{Exemplo}[chapter]
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{\vspace{-1.5cm}\Huge\normalfont\scshape CPNCheck\upshape\\[6pt]
+\Large Tratamento da explosão de estados\\[4pt]
+\large redução por ordem parcial com conjuntos teimosos (\emph{stubborn sets})}
+\author{Documentação técnica}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\vspace{1cm}
+\begin{center}
+\begin{minipage}{0.84\textwidth}
+\small
+\noindent\textbf{Sobre este documento.} Ele descreve a etapa do \cpn{} que
+combate a explosão de estados: de onde a explosão vem nas redes geradas pelo
+\pyra{}, quais técnicas da literatura foram avaliadas (inclusive as três do
+capítulo~8 de Jensen \& Kristensen), por que a escolhida foi a redução por
+ordem parcial com \emph{conjuntos teimosos}, como ela funciona passo a passo,
+o que exatamente ela garante, onde ela para de funcionar, e como foi validada.
+
+\vspace{6pt}
+\noindent Não há código aqui. O texto explica o \emph{funcionamento} e o
+\emph{porquê}; a implementação está em \code{cpncheck/reduction.py} e os
+testes em \code{tests/test\_reduction.py}.
+\end{minipage}
+\end{center}
+
+\vfill
+\begin{center}
+\small
+\url{https://github.com/GrupoCybersegurancaVirtus/cpncheck}
+\end{center}
+
+\clearpage
+\tableofcontents
+\clearpage
+
+% ============================================================================
+\chapter{O problema: de onde vem a explosão}
+\label{cap:problema}
+% ============================================================================
+
+\section{O que o model checker enumera}
+
+O \cpn{} decide propriedades temporais (``a rede sempre termina'', ``a
+predição nunca recebe dois tokens'', ``toda execução chega a uma decisão'')
+construindo o \emph{grafo de ocorrência}: um nó para cada marcação alcançável a
+partir da marcação inicial, um arco para cada ocorrência de um elemento de
+ligação (uma transição com valores para suas variáveis). As fórmulas CTL são
+então avaliadas sobre esse grafo por pontos fixos.
+
+O custo de tudo é o tamanho desse grafo. Se ele tem milhões de nós, cada
+propriedade custa milhões de passos; se tem $10^{30}$, nenhuma é decidida.
+Isso é a \emph{explosão de estados}, a principal limitação dos métodos de
+espaço de estados (Jensen \& Kristensen, 2009, cap.~8).
+
+\section{O que foi medido nas redes do \pyra{}}
+
+Antes de escolher uma técnica, foi medido \emph{o quê} explode. As redes
+geradas a partir de modelos do scikit-learn têm uma estrutura fixa
+(Figura~\ref{fig:rede-rf}): uma transição \code{Distribute} copia a amostra
+para a entrada de cada árvore; cada árvore é uma página cujas transições são as
+folhas, uma por região do espaço de atributos; cada folha deposita a saída da
+árvore num lugar próprio; uma transição de agregação (\code{Vote} na floresta,
+\code{Decide\_k} no \emph{boosting}) consome todas as saídas e escreve a classe
+em \code{Prediction}.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  place/.style={circle,draw,minimum size=8mm,inner sep=0pt,font=\scriptsize},
+  trans/.style={rectangle,draw,fill=black!6,minimum width=13mm,minimum height=6mm,font=\scriptsize},
+  leaf/.style={rectangle,draw,fill=accent!10,minimum width=9mm,minimum height=5mm,font=\tiny},
+  >=Stealth]
+\node[place] (in) {Input};
+\node[trans,right=8mm of in] (dist) {Distribute};
+\foreach \i/\y in {0/1.6,1/0,2/-1.6}{
+  \node[place] (tin\i) at (4.6,\y) {TIn\textsubscript{\i}};
+  \node[leaf] (l\i a) at (6.4,\y+0.38) {folha};
+  \node[leaf] (l\i b) at (6.4,\y-0.38) {folha};
+  \node[place] (tp\i) at (8.2,\y) {TProb\textsubscript{\i}};
+  \draw[->] (dist) -- (tin\i);
+  \draw[->] (tin\i) -- (l\i a); \draw[->] (tin\i) -- (l\i b);
+  \draw[->] (l\i a) -- (tp\i); \draw[->] (l\i b) -- (tp\i);
+  \begin{scope}[on background layer]
+    \node[draw=soft,dashed,rounded corners,fit=(l\i a)(l\i b),inner sep=3pt] (box\i) {};
+  \end{scope}
+}
+\node[font=\tiny,soft,above=0pt of box0] {página Tree\_0};
+\node[trans,right=8mm of tp1] (vote) {Vote};
+\node[place,right=8mm of vote] (pred) {\tiny Prediction};
+\draw[->] (in) -- (dist);
+\foreach \i in {0,1,2}{\draw[->] (tp\i) -- (vote);}
+\draw[->] (vote) -- (pred);
+\end{tikzpicture}
+\caption{Uma floresta de três árvores como rede (simplificada: cada árvore
+real tem uma folha por região, com uma guarda sobre os atributos). As árvores
+não compartilham nenhum lugar entre \code{Distribute} e \code{Vote}.}
+\label{fig:rede-rf}
+\end{figure}
+
+Para uma amostra fixa, cada árvore tem exatamente uma folha habilitada, e as
+árvores são independentes entre si. Mesmo assim o grafo de ocorrência registra
+\emph{todas as ordens} em que elas podem disparar. A Tabela~\ref{tab:medido}
+mostra o que foi medido.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Floresta aleatória, $n$ árvores & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+Marcações alcançáveis & 4 & 6 & 10 & 18 & 34 & 66 & 130 & 258 \\
+\bottomrule
+\end{tabular}
+
+\vspace{8pt}
+\begin{tabular}{lrrrrr}
+\toprule
+\emph{Boosting}, 3 classes, $M$ estágios & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+Marcações alcançáveis & 218 & 731 & 1\,730 & 3\,377 & 5\,834 \\
+\bottomrule
+\end{tabular}
+\caption{Tamanho do grafo de ocorrência, medido. A floresta tem exatamente
+$2^n+2$ marcações; o \emph{boosting} binário (um canal) é linear em $M$; o
+multiclasse é o produto dos tamanhos dos $K$ canais, que andam em paralelo.}
+\label{tab:medido}
+\end{table}
+
+A fórmula da floresta é exata e conta a história inteira: depois de
+\code{Distribute}, cada marcação corresponde a um \emph{subconjunto} das
+árvores que já votaram, e há $2^n$ subconjuntos; somam-se a marcação inicial
+e a final. A Figura~\ref{fig:cubo} mostra o caso $n=3$: um cubo.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  st/.style={circle,draw,minimum size=7mm,inner sep=0pt,font=\scriptsize},
+  red/.style={st,draw=warm,very thick,fill=warm!10},
+  >=Stealth, x=1.15cm, y=1.0cm]
+\node[st] (m0) at (0,0) {$M_0$};
+\node[red] (e) at (1.6,0) {$\emptyset$};
+\node[st] (a) at (3.2,1.6) {1};
+\node[red] (b) at (3.2,0) {0};
+\node[st] (c) at (3.2,-1.6) {2};
+\node[st] (ab) at (5.0,1.6) {0,1};
+\node[st] (ac) at (5.0,0) {1,2};
+\node[red] (bc) at (5.0,-1.6) {0,2};
+\node[red] (abc) at (6.8,0) {0,1,2};
+\node[red] (f) at (8.4,0) {$M_f$};
+\draw[->] (m0) -- node[above,font=\tiny]{Distribute} (e);
+\draw[->,soft] (e) -- (a); \draw[->,warm,very thick] (e) -- (b); \draw[->,soft] (e) -- (c);
+\draw[->,soft] (a) -- (ab); \draw[->,soft] (a) -- (ac);
+\draw[->,soft] (b) -- (ab); \draw[->,warm,very thick] (b) -- (bc);
+\draw[->,soft] (c) -- (ac); \draw[->,soft] (c) -- (bc);
+\draw[->,soft] (ab) -- (abc); \draw[->,soft] (ac) -- (abc); \draw[->,warm,very thick] (bc) -- (abc);
+\draw[->,warm,very thick] (abc) -- node[above,font=\tiny]{Vote} (f);
+\end{tikzpicture}
+\caption{O grafo de ocorrência de uma floresta de três árvores. Cada nó do
+meio é o conjunto de árvores que já votaram. Em destaque, o único caminho que
+o grafo reduzido explora: $n+3$ nós em vez de $2^n+2$.}
+\label{fig:cubo}
+\end{figure}
+
+\begin{nota}
+\textbf{A conclusão da medição.} A explosão nessas redes é
+\emph{exclusivamente} entrelaçamento (\emph{interleaving}) de componentes
+independentes. Nenhuma árvore tem mais de um caminho interno para uma amostra
+fixa; o que cresce é o número de ordens em que $n$ coisas independentes podem
+acontecer. Uma floresta de 100 árvores tem $2^{100}+2 \approx 1{,}3\times
+10^{30}$ marcações --- e todas as ordens levam ao mesmo voto.
+\end{nota}
+
+% ============================================================================
+\chapter{As técnicas avaliadas}
+\label{cap:avaliacao}
+% ============================================================================
+
+O capítulo~8 de Jensen \& Kristensen apresenta três métodos de redução
+desenvolvidos no contexto de CPN: \emph{sweep-line}, simetria e equivalência.
+Ele próprio observa que nenhum método funciona para todo tipo de sistema, que
+cada um explora uma característica específica do modelo, e que o método
+escolhido precisa (i) explorar uma característica presente no sistema e (ii)
+preservar as propriedades que se quer verificar. Os três foram avaliados com
+esses dois critérios contra as redes medidas acima.
+
+\section{Sweep-line}
+
+\textbf{Ideia.} Se existe uma \emph{medida de progresso} que nunca diminui ao
+longo das ocorrências, o grafo pode ser explorado camada por camada e as
+camadas já processadas podem ser apagadas da memória: nenhuma marcação futura
+volta a elas. O pico de memória cai para o tamanho de uma camada.
+
+\textbf{Aplica-se?} Sim, e trivialmente: as redes são acíclicas, e o número de
+transições já disparadas é uma medida de progresso monotônica.
+
+\textbf{Ajuda?} Pouco. A camada mais larga da floresta é a do meio do cubo,
+com $\binom{n}{\lfloor n/2\rfloor}$ marcações --- para $n=8$, o pico medido foi
+126 de 258 nós, um ganho de cerca de $2\times$, o mesmo patamar da tabela de
+estatísticas do próprio capítulo. Para $n=100$ o pico ainda é da ordem de
+$10^{29}$. A técnica reduz memória, não o número de estados visitados.
+
+\textbf{Preserva?} Só propriedades de segurança (``existe marcação alcançável
+que satisfaz um predicado''). Perderíamos as propriedades de vivacidade
+(\code{AF}), a de recuperabilidade (\code{AG EF}), a de \emph{home marking} (que
+precisa dos componentes fortemente conexos) e os contraexemplos, porque a
+versão básica apaga justamente os caminhos que eles reproduzem.
+
+\section{Simetria}
+
+\textbf{Ideia.} Se componentes são intercambiáveis (os receptores idênticos do
+protocolo do capítulo), marcações que diferem só por uma permutação das
+identidades viram um único nó.
+
+\textbf{Aplica-se?} Não. O critério de corretude exige que toda guarda e toda
+inscrição de arco seja simétrica sob a permutação. As árvores de uma floresta
+têm limiares diferentes; trocar a árvore $i$ pela $j$ não é uma simetria da
+rede. O mesmo vale para os canais do \emph{boosting}. Só árvores literalmente
+idênticas seriam permutáveis, o que quase não ocorre com \emph{bootstrap}.
+
+\section{Equivalência}
+
+\textbf{Ideia.} Generaliza a simetria: o usuário define diretamente quais
+marcações são equivalentes, com a obrigação de que marcações equivalentes
+tenham conjuntos equivalentes de elementos habilitados e de sucessores.
+
+\textbf{Aplica-se?} Não foi encontrada relação útil que satisfaça o critério.
+Duas marcações com subconjuntos diferentes de árvores já disparadas habilitam
+transições diferentes; não são equivalentes. Além disso, a prova de
+consistência é manual --- e o \cpn{} já removeu uma vez um modo composicional
+justamente por falta de prova de preservação.
+
+\section{O que sobra: redução por ordem parcial}
+
+O mesmo capítulo lembra que há métodos desenvolvidos \emph{fora} do contexto de
+CPN e aplicáveis a qualquer sistema de transições. Entre eles está a família
+que ataca exatamente o fenômeno medido: a \emph{redução por ordem parcial}
+(\emph{partial-order reduction}), que explora a \emph{independência} entre
+ocorrências para não enumerar ordens que não importam. Sua forma mais antiga e
+mais geral são os \emph{conjuntos teimosos} de Valmari (1988, 1991). A
+Tabela~\ref{tab:comparacao} resume a avaliação.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.9cm}>{\raggedright\arraybackslash}p{3.2cm}}
+\toprule
+Técnica & Explora & Nas redes do \pyra{} & Propriedades \\
+\midrule
+Sweep-line & progresso monotônico & aplicável; pico $\approx\binom{n}{n/2}$, ganho $\sim2\times$ & só segurança \\
+Simetria & componentes permutáveis & \textbf{incorreta}: guardas diferentes & todas as invariantes por simetria \\
+Equivalência & relação dada pelo usuário & sem relação válida; prova manual & as que a relação respeita \\
+\textbf{Ordem parcial} & \textbf{independência} & \textbf{floresta: $2^n+2 \to n+3$} & dependem das condições (cap.~\ref{cap:preserva}) \\
+\bottomrule
+\end{tabular}
+\caption{Resumo da avaliação.}
+\label{tab:comparacao}
+\end{table}
+
+% ============================================================================
+\chapter{A ideia central: independência}
+\label{cap:ideia}
+% ============================================================================
+
+\section{O diamante}
+
+Duas ocorrências $a$ e $b$ são \emph{independentes} numa marcação $M$ quando
+ambas estão habilitadas, disparar uma não desabilita a outra, e as duas ordens
+levam à mesma marcação. No grafo isso aparece como um losango
+(Figura~\ref{fig:diamante}).
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[st/.style={circle,draw,minimum size=8mm,inner sep=0pt,font=\small},>=Stealth]
+\node[st] (m) at (0,0) {$M$};
+\node[st] (ma) at (-1.6,-1.3) {$M_a$};
+\node[st] (mb) at (1.6,-1.3) {$M_b$};
+\node[st] (mab) at (0,-2.6) {$M'$};
+\draw[->] (m) -- node[above left,font=\small]{$a$} (ma);
+\draw[->] (m) -- node[above right,font=\small]{$b$} (mb);
+\draw[->] (ma) -- node[below left,font=\small]{$b$} (mab);
+\draw[->] (mb) -- node[below right,font=\small]{$a$} (mab);
+\end{tikzpicture}
+\caption{$a$ e $b$ independentes: as duas ordens chegam a $M'$. Explorar só
+uma delas não perde $M'$; perde apenas $M_b$ (ou $M_a$), uma marcação
+intermediária.}
+\label{fig:diamante}
+\end{figure}
+
+A redução explora só um lado do losango. O que se perde é a marcação
+intermediária do outro lado. Toda a teoria que segue responde a uma pergunta:
+\emph{quando} é seguro perder marcações intermediárias? A resposta depende do
+que se quer verificar. Se a pergunta é ``a rede pode travar?'', marcações
+intermediárias nunca importam, porque não são mortas. Se a pergunta é ``a
+predição nunca tem dois tokens?'', importam só as que podem violar isso. Se é
+``toda execução chega a uma decisão?'', importa a ordem relativa de quem mexe
+na predição.
+
+\section{Do par ao conjunto}
+
+Com $n$ árvores independentes, há $n!$ ordens das folhas e $2^n$ marcações
+intermediárias. Escolher sempre a mesma árvore primeiro --- a de menor índice
+que ainda não votou --- percorre um único caminho de $n$ passos. Mas
+``independente'' não pode ser um julgamento caso a caso sobre marcações já
+calculadas: a redução tem de decidir \emph{antes} de explorar, olhando só a
+marcação atual e a estrutura da rede. É isso que o conjunto teimoso
+formaliza: um conjunto de transições, calculado na marcação atual, tal que
+disparar primeiro um de seus membros nunca impede nada que outra ordem poderia
+fazer.
+
+% ============================================================================
+\chapter{Dependência lida dos arcos}
+\label{cap:dependencia}
+% ============================================================================
+
+O \cpn{} não tenta descobrir a independência executando a rede. Ele a lê da
+\emph{estrutura}: de quais lugares cada transição tira tokens, em quais
+deposita, e quais apenas consulta. Isso é feito uma vez por rede.
+
+\section{Tirar, dar, testar}
+
+Para cada transição $t$ e cada lugar $p$ ligado a ela:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item $t$ \textbf{tira} de $p$ se há um arco de entrada de $p$ para $t$;
+  \item $t$ \textbf{dá} a $p$ se há um arco de saída de $t$ para $p$;
+  \item $t$ \textbf{testa} $p$ se há um arco de entrada e um de saída
+        \emph{com a mesma inscrição}. O token sai e volta igual: o efeito
+        líquido é nulo, mas $t$ precisa que ele esteja lá. Nesse caso $p$ não
+        conta como ``tirado'' nem ``dado''.
+\end{itemize}
+
+Os \emph{lugares de entrada} de $t$ são os que ela tira ou testa; os
+\emph{lugares que $t$ muda} são os que ela tira ou dá.
+
+\begin{nota}
+\textbf{Por que estrutural e não semântica.} Uma transição que dá a um lugar
+pode, para certos valores, não depositar nada (uma inscrição
+\code{if \ldots{} then 1`x else empty}). A leitura estrutural a trata como
+``pode dar'' sempre. Isso é uma \emph{sobre-aproximação} da dependência: a
+redução pode manter mais estados do que precisaria, nunca menos. A correção não
+depende de entender o que as inscrições calculam.
+\end{nota}
+
+\section{As relações derivadas}
+
+A partir disso, para cada lugar $p$, ficam indexados: quem dá a $p$
+(\emph{produtores}), quem tira de $p$, e quem precisa de $p$ (tem $p$ como
+lugar de entrada). E para cada transição $t$ fica pronto o seu \emph{conjunto
+de conflito}: todas as transições que mudam algum lugar de entrada de $t$, e
+todas as que precisam de algum lugar de que $t$ tira. Na floresta, o conjunto
+de conflito de uma folha da árvore~$i$ é: as outras folhas da árvore~$i$ (que
+tiram de \code{TIn}$_i$ como ela) e \code{Distribute} (que dá a
+\code{TIn}$_i$). Nenhuma transição de outra árvore aparece --- e isso é tudo o
+que a redução precisa saber para não entrelaçar as árvores.
+
+% ============================================================================
+\chapter{O conjunto teimoso de uma marcação}
+\label{cap:teimoso}
+% ============================================================================
+
+\section{As duas regras de fechamento}
+
+Em cada marcação $M$, o conjunto teimoso $S$ começa com uma ou mais
+transições-semente e é fechado por duas regras, aplicadas até nada mudar:
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{Transição habilitada em $S$.} Entram em $S$ todas as que
+        mudam algum lugar de entrada dela, e todas as que precisam de algum
+        lugar de que ela tira --- o seu conjunto de conflito.
+
+        \emph{Efeito:} nenhuma transição fora de $S$ consegue desabilitá-la,
+        nem ser desabilitada por ela, nem alterar os tokens dos quais suas
+        ligações dependem.
+  \item \textbf{Transição desabilitada em $S$.} Entram os \emph{habilitadores}
+        dela. Se algum lugar de entrada tem menos tokens do que qualquer
+        ligação exige, basta escolher \emph{um} desses lugares e incluir seus
+        produtores --- o de menos produtores. Se nenhum está curto (a transição
+        está desabilitada pelos \emph{valores} dos tokens ou pela guarda),
+        entram os produtores de todos os lugares de entrada.
+
+        \emph{Efeito:} nenhuma transição fora de $S$ consegue habilitá-la.
+        Tirar tokens nunca habilita nada, por isso só produtores importam.
+\end{enumerate}
+
+Os elementos de ligação expandidos em $M$ são então todos os elementos
+habilitados das transições de $S$ --- e só eles.
+
+\section{O que as regras garantem}
+
+As regras implementam as duas condições clássicas de Valmari:
+
+\begin{description}[leftmargin=1.4em,font=\normalfont\bfseries]
+  \item[D1 (comutação).] Se uma sequência de transições fora de $S$ seguida
+        de uma transição $t\in S$ é possível a partir de $M$, então $t$ seguida
+        da mesma sequência também é, e chega à mesma marcação. Em outras
+        palavras: o que está em $S$ pode sempre ser antecipado.
+  \item[D2 (chave).] Existe em $S$ uma transição habilitada que continua
+        habilitada qualquer que seja a sequência de transições fora de $S$.
+        Pela regra~1, \emph{toda} transição habilitada de $S$ é uma chave.
+  \item[D0.] $S$ contém alguma transição habilitada sempre que $M$ não é
+        morta. O \cpn{} garante isso escolhendo pelo menos uma semente
+        habilitada.
+\end{description}
+
+\begin{nota}
+\textbf{Uma sutileza de redes coloridas.} Em redes P/T basta proteger a
+transição contra ser desabilitada. Em CPN, uma transição habilitada pode ganhar
+\emph{novas ligações} quando alguém deposita tokens com outros valores nos seus
+lugares de entrada --- e uma ligação nova que só existe depois de uma transição
+de fora de $S$ quebraria D1. Por isso a regra~1 inclui em $S$ também quem
+\emph{dá} aos lugares de entrada, não apenas quem tira deles. Assim os tokens de
+entrada de $t$ ficam intocados por tudo fora de $S$, e as ligações habilitadas
+de $t$ são exatamente as mesmas antes e depois.
+\end{nota}
+
+\section{Escolhendo entre candidatos}
+
+Há em geral várias sementes possíveis, e cada uma gera um conjunto fechado
+diferente. O \cpn{} prefere o candidato que expande o menor número de
+elementos de ligação e para assim que encontra um com exatamente um. Como as
+duas regras olham uma transição por vez, o fecho de uma união é a união dos
+fechos; o fecho de cada transição isolada é calculado uma vez por marcação e
+combinado.
+
+\section{Exemplo: a floresta de três árvores, passo a passo}
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item Em $M_0$ só \code{Distribute} está habilitada. Ela é expandida (não há
+        o que reduzir).
+  \item Em $\emptyset$ estão habilitadas a folha certa de cada uma das três
+        árvores. Semente: a folha da árvore~0. Regra~1: entram as outras folhas
+        da árvore~0 e \code{Distribute}. As outras folhas estão desabilitadas
+        (guarda falsa para esta amostra): regra~2, sem lugar curto, entram os
+        produtores de \code{TIn}$_0$ --- só \code{Distribute}, que já está.
+        \code{Distribute} está desabilitada (\code{Input} vazio): regra~2,
+        \code{Input} está curto e não tem produtores. Fim: $S$ tem um único
+        elemento habilitado. Só a árvore~0 dispara.
+  \item O mesmo acontece em $\{0\}$ com a árvore~1 e em $\{0,1\}$ com a
+        árvore~2.
+  \item Em $\{0,1,2\}$ só \code{Vote} está habilitada; dispara; a marcação
+        final é morta.
+\end{enumerate}
+
+O grafo reduzido é o caminho destacado na Figura~\ref{fig:cubo}: $n+3$ nós.
+As marcações $\{1\}$, $\{2\}$, $\{0,1\}$\ldots{} nunca são construídas.
+
+% ============================================================================
+\chapter{O que se preserva depende da pergunta}
+\label{cap:preserva}
+% ============================================================================
+
+D0--D2 sozinhas garantem uma coisa: nenhuma marcação morta se perde. Isso
+basta para algumas propriedades e não para outras. O \cpn{} constrói até
+quatro \emph{tipos} de grafo, cada um com as condições adicionais que a
+pergunta exige, e decide cada propriedade no tipo menos explorado que
+comprovadamente dá o mesmo veredito do grafo completo.
+
+\section{Grafo \emph{deadlock}: só D0--D2}
+
+\begin{teorema}[Valmari]
+Com D0--D2, toda marcação morta alcançável no grafo completo é alcançável no
+grafo reduzido, e vice-versa (o reduzido é um subgrafo do completo).
+\end{teorema}
+
+\emph{Por quê, informalmente.} Pegue um caminho do grafo completo até uma
+marcação morta. Ele precisa conter alguma transição de $S$: senão a chave de
+D2 continuaria habilitada até o fim, e a marcação não seria morta. Pela D1, a
+primeira transição de $S$ no caminho pode ser antecipada; o reduzido dá esse
+passo, e o caminho restante é um passo mais curto. Por indução, o reduzido
+chega à mesma marcação morta.
+
+O mesmo argumento mostra mais uma coisa, que o \cpn{} usa:
+
+\begin{teorema}
+Com D0--D2, existe uma sequência de ocorrência infinita no grafo completo se e
+somente se o grafo reduzido tem um ciclo.
+\end{teorema}
+
+\emph{Por quê.} Dada uma sequência infinita, ou ela contém uma transição de
+$S$ (que D1 antecipa), ou não contém nenhuma (e então a chave, que nunca é
+desabilitada, pode ser disparada antes de qualquer prefixo dela). Em ambos os
+casos o reduzido dá um passo e continua havendo uma sequência infinita a
+partir dali. Como o grafo é finito, isso fecha um ciclo.
+
+\textbf{Decide:} terminação (\code{AF dead}), ``toda marcação morta tem
+predição'' (\code{AG(dead $\to$ pred)}) e, quando a rede termina, o \emph{home
+marking}: num grafo finito acíclico os componentes terminais são as marcações
+mortas, e existe \emph{home marking} exatamente quando há uma só.
+
+\section{Grafo \emph{safety}: D0--D2 mais um objetivo}
+
+Para invariantes \code{AG $\psi$} com $\psi$ proposicional (``a predição tem no
+máximo um token'', ``nunca há duas folhas da mesma árvore habilitadas''), a
+pergunta é se alguma marcação que viola $\psi$ é alcançável --- mesmo que não
+seja morta. Marcações intermediárias passam a importar, mas só as que podem
+violar $\psi$.
+
+A condição extra vem de Kristensen \& Valmari (2000): numa marcação em que
+$\psi$ ainda vale, $S$ precisa conter um \emph{up-set} para $\neg\psi$ ---
+um conjunto de transições tal que todo caminho que torna $\psi$ falsa dispara
+alguma delas.
+
+\begin{teorema}[Kristensen \& Valmari]
+Com D0--D2 e o up-set, uma marcação violando $\psi$ é alcançável no grafo
+completo se e somente se é alcançável no reduzido. Não é preciso condição de
+ciclo.
+\end{teorema}
+
+\emph{Por quê.} Pegue o caminho mais curto até uma violação. Ele dispara
+alguma transição do up-set, e portanto de $S$; D1 antecipa a primeira; o
+caminho restante é estritamente mais curto. O comprimento cai a cada passo ---
+não há como ``andar em círculos'' ignorando a violação.
+
+\subsection*{Como o up-set é calculado}
+
+O up-set é calculado na marcação atual, a partir da fórmula e do seu valor
+presente. Para cada proposição atômica, a Tabela~\ref{tab:upset} diz quem
+consegue mudar seu valor.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.1cm}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{4.4cm}}
+\toprule
+Proposição & Hoje verdadeira; para ficar falsa & Hoje falsa; para ficar verdadeira \\
+\midrule
+algum lugar marcado & tirar de \emph{um} lugar marcado (qualquer um serve) & dar a algum dos lugares \\
+todos marcados & tirar de algum dos lugares & dar a \emph{um} lugar vazio \\
+$|p|\le k$ para os lugares & dar a algum dos lugares & tirar de \emph{um} lugar acima de $k$ \\
+tokens num domínio & dar a algum dos lugares & tirar de \emph{um} lugar com token fora \\
+$T$ habilitada & tirar das entradas de \emph{uma} habilitada & habilitadores de cada $t\in T$ \\
+$|\mathrm{EN}(T)|\le k$ & habilitadores das desabilitadas, produtores das entradas das habilitadas & tirar das entradas de $T$ \\
+\bottomrule
+\end{tabular}
+\caption{Quem pode virar cada proposição. ``\emph{Um}'' indica que basta
+escolher um elemento (o de menor conjunto), porque todos precisam mudar.}
+\label{tab:upset}
+\end{table}
+
+Os conectivos combinam isso pela lógica de ``quem precisa mudar'': uma
+conjunção verdadeira cai se \emph{qualquer} conjunto cair, então os up-sets
+dos conjuntos se somam; uma conjunção falsa só fica verdadeira se \emph{todo}
+conjunto falso virar, então basta o up-set de um deles, o menor. A disjunção é
+o dual, e a negação apenas inverte o valor.
+
+\begin{exemplo}
+Propriedade D1 da floresta: \code{AG(EN(Vote) $\to$ todas as árvores
+votaram)}. No início, \code{EN(Vote)} é falsa, e a implicação é verdadeira
+por causa dela. Para violá-la, \code{Vote} precisa ficar habilitada; o lugar
+de entrada curto de menor número de produtores é a saída de uma árvore; o
+up-set são as folhas daquela árvore. A busca segue linear.
+\end{exemplo}
+
+\section{Grafo \emph{stutter}: visibilidade, singleton e ciclos}
+
+Para \code{AF}, \code{EF}, \code{EU} e combinações como \code{AG EF}, a
+\emph{ordem} relativa dos eventos observados importa. A teoria aplicada é a de
+Gerth, Kuiper, Peled \& Penczek (1999), que acrescenta a D0--D2:
+
+\begin{description}[leftmargin=1.4em,font=\normalfont\bfseries]
+  \item[C2 (visibilidade).] Uma transição é \emph{visível} se muda algum lugar
+        que a fórmula observa (os lugares das proposições, ou os lugares de
+        entrada das transições cuja habilitação a fórmula consulta). Um
+        conjunto reduzido só pode conter transições invisíveis.
+  \item[C3 (ciclo).] Se o passo reduzido levaria a uma marcação que está na
+        pilha da busca em profundidade (fecharia um ciclo), a marcação é
+        expandida por completo. Sem isso, um ciclo poderia adiar para sempre
+        uma transição que ninguém escolhe (o ``problema da ignorância'').
+  \item[C4 (singleton).] O conjunto reduzido tem \emph{um único} elemento de
+        ligação; caso contrário, expande-se tudo.
+\end{description}
+
+\begin{teorema}[Gerth, Kuiper, Peled \& Penczek]
+Com essas condições o grafo reduzido é bissimilar por gagueira
+(\emph{stuttering bisimilar}) ao completo em relação às proposições
+observadas. Portanto toda fórmula CTL sem o operador ``próximo'' (CTL-X) tem o
+mesmo valor nos dois.
+\end{teorema}
+
+\emph{Gagueira} significa: as execuções do reduzido e do completo mostram as
+mesmas mudanças das proposições observadas, na mesma ordem, diferindo apenas
+em quantas vezes cada valor se repete. Como CTL-X não sabe contar passos,
+não distingue as duas. Nenhuma propriedade do catálogo usa ``próximo''.
+
+Por causa de C3, este tipo é explorado em profundidade; os outros dois, em
+largura, o que dá contraexemplos mais curtos.
+
+\section{Grafo \emph{full}}
+
+O grafo de ocorrência comum. Usado para as fórmulas que nenhum dos teoremas
+cobre --- em particular as que mencionam marcações mortas de um jeito diferente
+dos formatos reconhecidos (por exemplo \code{AG EF dead}), e o \emph{home
+marking} de uma rede que não termina.
+
+\section{Por que \emph{dead} é tratado à parte}
+
+``A marcação é morta'' não é uma proposição sobre lugares: \emph{qualquer}
+transição pode torná-la verdadeira ao ser a última. Tratá-la como observada
+tornaria toda transição visível e anularia a redução. Por isso ela só aparece
+nos formatos que o grafo \emph{deadlock} decide sem visibilidade:
+\code{AF dead}, \code{AG(dead $\to\psi$)}, \code{EF(dead $\wedge\chi$)} e a
+negação deste, com $\psi$, $\chi$ sem \emph{dead}.
+
+% ============================================================================
+\chapter{Da propriedade ao grafo}
+\label{cap:pipeline}
+% ============================================================================
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle,draw,rounded corners=2pt,fill=callout,minimum height=8mm,
+              text width=2.7cm,align=center,font=\small},
+  kind/.style={rectangle,draw,rounded corners=2pt,minimum height=7mm,
+               text width=1.8cm,align=center,font=\scriptsize},
+  >=Stealth]
+\node[box] (p) at (0,0) {propriedade (fórmula)};
+\node[box] (s) at (4,0) {divisão em partes};
+\node[box] (c) at (8,0) {classificação de cada parte};
+\node[kind,fill=accent!8] (k1) at (1.3,-1.8) {deadlock};
+\node[kind,fill=accent!8] (k2) at (3.5,-1.8) {safety};
+\node[kind,fill=accent!8] (k3) at (5.7,-1.8) {stutter};
+\node[kind,fill=black!6] (k4) at (7.9,-1.8) {full};
+\node[box] (g) at (2.4,-3.6) {grafos reduzidos (com cache)};
+\node[box] (v) at (6.8,-3.6) {veredito = conjunção das partes};
+\draw[->] (p) -- (s); \draw[->] (s) -- (c);
+\foreach \k in {k1,k2,k3,k4}{\draw[->] (c.south) -- (\k.north); \draw[->] (\k.south) -- (g.north);}
+\draw[->] (g) -- (v);
+\end{tikzpicture}
+\caption{Cada propriedade é dividida, cada parte é classificada, e cada
+classe é decidida no seu grafo.}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Divisão em partes}
+
+Uma parte que observa menos lugares tem menos transições visíveis e um up-set
+menor, e portanto reduz mais. Antes de classificar, toda propriedade é
+dividida em partes independentes cuja conjunção é ela mesma:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{quantificador ``para toda árvore/canal''}: vira uma parte por
+        árvore ou canal, cada uma com o nome do membro, que aparece no
+        contraexemplo;
+  \item \textbf{\code{AG} de conjunção}: \code{AG}$(a\wedge b) =$
+        \code{AG}$\,a\,\wedge$ \code{AG}$\,b$;
+  \item \textbf{limite sobre muitos lugares}: ``todo lugar tem no máximo um
+        token'' (A7) vira uma invariante por lugar. Sem isso, o up-set seria
+        ``todos os produtores de todos os lugares'' --- isto é, tudo --- e nada
+        seria reduzido.
+\end{itemize}
+
+\section{Classificação}
+
+Cada parte é examinada pela forma da fórmula: \code{AF dead} e as formas com
+\emph{dead} reconhecidas vão para \emph{deadlock}; \code{AG}, \code{!EF} e
+\code{EF} de fórmulas proposicionais sem \emph{dead} vão para \emph{safety}
+(com o $\psi$ cuja violação é o objetivo); o resto sem \emph{dead} vai para
+\emph{stutter} (com o seu conjunto de transições visíveis); o que sobrar vai
+para \emph{full}. A Tabela~\ref{tab:catalogo} mostra o resultado para o
+catálogo das redes de árvores.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{llll}
+\toprule
+Id & Propriedade & Grafo & Partes (RF, 100 árvores) \\
+\midrule
+A1 & terminação & deadlock & 1 \\
+A2 & sem travamento espúrio & deadlock & 1 \\
+A3 & decisão inevitável (\code{AF pred}) & stutter & 1 \\
+A4 & recuperabilidade (\code{AG EF pred}) & stutter & 1 \\
+A5 & saída única & safety & 1 \\
+A6 & rótulo válido & safety & 1 \\
+A7 & \emph{safeness} & safety & 202 (uma por lugar) \\
+A8 & \emph{home marking} & deadlock\textsuperscript{*} & --- \\
+B1 & determinismo das folhas & safety & 100 \\
+B2 & seleção inevitável de folha & stutter & 100 \\
+B3 & saída única por árvore & safety & 100 \\
+C1, C2 & precedência dos estágios (GBDT) & stutter & por canal \\
+C3a & decisão inevitável (GBDT) & stutter & 1 \\
+C3b & decisão determinística (GBDT) & safety & 1 \\
+D1 & votação completa & safety & 1 \\
+D2a & agregação inevitável (\code{AF EN(Vote)}) & stutter & 1 (\textbf{não reduz}) \\
+D2b & agregação única & safety & 1 \\
+\bottomrule
+\end{tabular}
+\caption{Onde cada propriedade do catálogo é decidida. \textsuperscript{*}Se a
+rede termina; senão, o grafo completo. B4 (estrutural) e PC
+(teste de conformidade) não usam grafo e não mudam.}
+\label{tab:catalogo}
+\end{table}
+
+\section{Caches}
+
+Grafos são construídos sob demanda e guardados por tipo e parâmetro: um único
+grafo \emph{deadlock} serve A1, A2 e A8; grafos \emph{stutter} com o mesmo
+conjunto visível são compartilhados. Além disso, as centenas de grafos
+\emph{safety} de uma mesma entrada percorrem quase sempre as mesmas primeiras
+marcações em ordens diferentes, então os elementos habilitados de cada
+marcação são lembrados entre grafos. E dentro de um grafo, ao passar de uma
+marcação para a seguinte, só são reavaliadas as transições que precisam de
+algum lugar que a ocorrência mudou --- as outras mantêm exatamente as mesmas
+ligações.
+
+% ============================================================================
+\chapter{Detalhes que importam para a correção}
+\label{cap:detalhes}
+% ============================================================================
+
+\section{Habilitação num grafo reduzido}
+
+Propriedades como ``nunca há duas folhas habilitadas'' ou ``\code{Vote} acaba
+habilitada'' consultam a \emph{habilitação} numa marcação. No grafo completo,
+habilitação e arcos de saída coincidem. No reduzido, não: os arcos são só os
+elementos expandidos. Por isso cada nó de um grafo reduzido guarda a lista
+completa de elementos habilitados encontrada durante a busca, e as
+proposições de habilitação são avaliadas sobre ela, nunca sobre os arcos. Sem
+isso, uma redução esconderia exatamente o não-determinismo que B1 procura.
+
+\section{O não-determinismo continua visível}
+
+Se uma rede mutante tem duas folhas da mesma árvore habilitadas ao mesmo tempo
+(uma sobreposição de guardas alcançada pela amostra), as duas tiram do mesmo
+lugar; pela regra~1 entram juntas em qualquer conjunto teimoso. A redução
+nunca escolhe uma e esconde a outra. Isso aparece nos testes: os mutantes de
+sobreposição continuam reprovados com a redução ativa.
+
+\section{Contraexemplos}
+
+Todo grafo reduzido é um subgrafo do completo, então todo caminho nele é uma
+sequência de ocorrência real da rede. Os contraexemplos encontrados num grafo
+reduzido são construídos e certificados exatamente como antes: o
+\emph{replay}, que redispara a sequência com a regra de disparo da rede e
+confere a marcação final, continua sendo a prova de que não foram inventados.
+Eles podem não ser os mais curtos do grafo completo, apenas válidos.
+
+\section{Orçamento}
+
+Cada grafo tem o mesmo limite de marcações que o modo padrão. Uma parte cujo
+grafo estoura o limite fica \emph{sem veredito}; a propriedade inteira fica
+sem veredito se nenhuma outra parte falhou, e o relatório diz qual grafo
+estourou e por quê. Um veredito nunca é chutado.
+
+\section{O relatório}
+
+No modo reduzido, o relatório mostra quantos grafos foram construídos, de
+quais tipos, quantos nós no total e o maior; o tamanho do grafo
+\emph{deadlock}; e, abaixo de cada propriedade, em qual tipo de grafo ela foi
+decidida (por exemplo ``safety x202''). Como o \cpntools{} não tem essa redução,
+os números esperados do oráculo (nós, arcos, componentes) não são produzidos
+nesse modo: a comparação com o \cpntools{} continua sendo feita no modo
+padrão.
+
+% ============================================================================
+\chapter{O limite: visibilidade}
+\label{cap:limite}
+% ============================================================================
+
+Uma propriedade do catálogo não reduz: D2a, \code{AF EN(Vote)}, ``a agregação
+acaba habilitada''. A habilitação de \code{Vote} depende dos lugares de saída
+de \emph{todas} as árvores, e toda folha dá a um deles. Logo toda folha é
+visível, nenhum conjunto reduzido satisfaz C2, e o grafo \emph{stutter} desta
+propriedade é o grafo completo. Até 17 árvores ($2^{17}+2 = 131\,074$ marcações) isso ainda cabe no orçamento
+padrão; a partir daí D2a fica sem veredito, com a explicação ``$k$ de $m$
+transições mudam o que a propriedade observa e não podem ser reordenadas''.
+
+Isso não é um defeito da implementação: é o limite conhecido da redução por
+ordem parcial para propriedades de vivacidade. A condição estática de
+visibilidade não sabe que só a \emph{última} folha muda o valor da
+proposição --- isso depende de quais árvores já votaram, informação que só a
+exploração tem. Duas observações tornam o limite pouco grave na prática:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item A3 (\code{AF pred}, ``toda execução chega a uma decisão'') observa só
+        \code{Prediction}, é decidida em grafo de $n+3$ nós e já garante o que
+        D2a garante para uma rede que produz predição apenas via \code{Vote}.
+  \item D1 (``\code{Vote} só habilita quando todas votaram''), A1 e A2 cobrem o
+        lado de segurança da agregação, todos reduzidos.
+\end{itemize}
+
+\begin{nota}
+\textbf{Possível continuação.} O capítulo~8 observa que métodos de redução podem
+ser combinados. Para D2a, a combinação natural é com o \emph{sweep-line}: o
+grafo completo dessa propriedade é acíclico e tem medida de progresso trivial,
+então poderia ser percorrido camada a camada com memória proporcional à camada
+mais larga. Isso troca o limite de memória por tempo, sem mudar o número de
+estados; não foi implementado.
+\end{nota}
+
+% ============================================================================
+\chapter{Validação}
+\label{cap:validacao}
+% ============================================================================
+
+Uma redução só vale se for invisível nas respostas. O critério adotado foi o
+mais forte disponível sem um assistente de provas: comparar veredito por
+veredito com o grafo completo, em redes construídas para falhar cada
+propriedade.
+
+\section{Concordância de vereditos}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{No \cpn{}}: as duas redes de referência (\emph{boosting}
+        binário e floresta multiclasse) e \emph{todos} os seus mutantes --- um
+        por propriedade, incluindo ciclo, travamento, saída dupla, rótulo
+        inválido, sobreposição de guardas, votação parcial, estágio pulado ---
+        somando 28 redes e \textbf{435 vereditos}: \textbf{nenhuma
+        divergência}.
+  \item \textbf{No \pyra{}}: árvore de decisão, floresta, \emph{boosting}
+        binário e de três classes, nas versões inicial e refinada e em todos
+        os mutantes de cada uma: mesma concordância total, e o caminho completo
+        (\emph{model\_check} com redução) aprova as redes corretas.
+  \item \textbf{Escala}: florestas de até 16 árvores e \emph{boosting} de três
+        classes com até 5 estágios, comparados com o grafo completo: nenhuma
+        divergência.
+\end{itemize}
+
+\section{Propriedades dos próprios grafos}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item todo arco de um grafo reduzido é um arco do grafo completo;
+  \item as marcações mortas do grafo \emph{deadlock} são exatamente as do
+        completo, em todas as redes e mutantes;
+  \item a floresta de $n$ árvores tem $2^n+2$ marcações no completo e $n+3$ no
+        reduzido;
+  \item num grafo \emph{stutter}, toda marcação expandida parcialmente
+        expandiu exatamente um elemento, invisível;
+  \item os contraexemplos encontrados com a redução reexecutam na rede.
+\end{itemize}
+
+\section{O modo padrão não mudou}
+
+Os testes de concordância com o \cpntools{} 4.0.1 (executado sem interface,
+via Access/CPN) continuam passando no modo padrão: a redução é um caminho
+paralelo, ativado só quando pedido.
+
+% ============================================================================
+\chapter{Resultados}
+\label{cap:resultados}
+% ============================================================================
+
+\begin{table}[ht]
+\centering\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{2}{c}{Grafo completo} & \multicolumn{4}{c}{Com redução} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-7}
+Modelo & nós & tempo & \emph{deadlock} & maior grafo & tempo & decididas \\
+\midrule
+RF, 2 árvores & 6 & 0{,}00\,s & 5 & 6 & 0{,}00\,s & todas \\
+RF, 4 & 18 & 0{,}00\,s & 7 & 18 & 0{,}01\,s & todas \\
+RF, 8 & 258 & 0{,}06\,s & 11 & 258 & 0{,}03\,s & todas \\
+RF, 12 & 4\,098 & 1{,}39\,s & 15 & 4\,098 & 0{,}28\,s & todas \\
+RF, 16 & 65\,538 & 36{,}2\,s & 19 & 65\,538 & 5{,}4\,s & todas \\
+RF, 20 & $\approx10^{6}$ & --- & 23 & (orçamento) & 19\,s & menos D2a \\
+RF, 50 & $\approx10^{15}$ & --- & 53 & (orçamento) & 37\,s & menos D2a \\
+RF, 100 & $\approx10^{30}$ & --- & 103 & (orçamento) & 70\,s & menos D2a \\
+\midrule
+GBDT 3 cl., 1 estágio & 218 & 0{,}01\,s & 18 & 22 & 0{,}03\,s & todas \\
+GBDT 3 cl., 3 & 1\,730 & 0{,}17\,s & 36 & 40 & 0{,}15\,s & todas \\
+GBDT 3 cl., 5 & 5\,834 & 0{,}78\,s & 54 & 58 & 0{,}48\,s & todas \\
+\bottomrule
+\end{tabular}
+\caption{Uma amostra por rede, orçamento de 200\,000 marcações por grafo. Nas
+florestas o ``maior grafo'' é sempre o de D2a, que não reduz; ele também
+domina o tempo. A6 não entra na contagem das florestas porque o domínio de
+rótulos não foi declarado nesse experimento.}
+\label{tab:resultados}
+\end{table}
+
+Na floresta de 100 árvores, tirando D2a, \textbf{todas as outras 12
+propriedades de grafo} (B4 é estrutural e não usa grafo) são decididas em
+cerca de 6\,s, construindo 507 grafos
+reduzidos de no máximo 103 nós cada; A7 sozinha usa 202 grafos (um por
+lugar) e leva cerca de 2\,s. Os 64\,s restantes são D2a esgotando o orçamento.
+No \emph{boosting} multiclasse, onde nenhuma propriedade observa todas as
+árvores, tudo reduz: o maior grafo de qualquer propriedade tem 58 nós contra
+5\,834 do completo.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{semilogyaxis}[
+  width=0.82\linewidth, height=6.2cm,
+  xlabel={árvores na floresta ($n$)}, ylabel={marcações},
+  xmin=0, xmax=101, ymin=1, ymax=1e31,
+  legend pos=north west, legend style={font=\small,draw=none,fill=none},
+  grid=major, grid style={black!8}, tick label style={font=\small}]
+\addplot[warm,thick,domain=1:100,samples=100] {2^x+2};
+\addlegendentry{grafo completo, $2^n+2$}
+\addplot[soft,thick,dashed,domain=1:100,samples=100] {2^x/sqrt(1.5708*x)};
+\addlegendentry{pico do sweep-line, $\approx\binom{n}{n/2}$}
+\addplot[accent,very thick,domain=1:100,samples=100] {x+3};
+\addlegendentry{grafo \emph{deadlock} reduzido, $n+3$}
+\addplot[only marks,mark=*,mark size=1.6pt,warm] coordinates {(2,6)(4,18)(8,258)(12,4098)(16,65538)};
+\addplot[only marks,mark=*,mark size=1.6pt,accent] coordinates {(2,5)(4,7)(8,11)(12,15)(16,19)(20,23)(50,53)(100,103)};
+\end{semilogyaxis}
+\end{tikzpicture}
+\caption{Crescimento em escala logarítmica. Pontos: medidos. O sweep-line
+acompanha o grafo completo a uma distância constante na escala log; a redução
+por ordem parcial muda a classe de crescimento.}
+\label{fig:crescimento}
+\end{figure}
+
+% ============================================================================
+\chapter{Uso e limitações}
+\label{cap:uso}
+% ============================================================================
+
+\section{Como ativar}
+
+A redução é opcional e o modo padrão não mudou. Ela é ativada por um
+parâmetro, \code{reduction}, com valor \code{"stubborn"}, aceito pela
+verificação do \cpn{} (na API e na linha de comando, como opção
+\code{-{}-reduction stubborn}) e repassado pelo \pyra{} na verificação do modelo
+e no \emph{pipeline} verificado. Nenhuma propriedade, perfil ou rede precisa
+ser alterada: a divisão e a classificação são automáticas e valem para
+qualquer perfil, não só o das redes de árvores.
+
+\section{Quando usar}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Florestas com mais de uns 12 árvores e \emph{boosting}
+        multiclasse}: é onde a explosão está, e onde a redução muda a classe
+        de crescimento.
+  \item \textbf{Comparação com o \cpntools{}}: use o modo padrão; o oráculo
+        compara também o tamanho do grafo, que a redução muda de propósito.
+  \item \textbf{Redes pequenas}: tanto faz; a redução constrói vários grafos
+        pequenos em vez de um, e pode não ser mais rápida.
+\end{itemize}
+
+\section{Limitações}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Visibilidade} (capítulo~\ref{cap:limite}): propriedades de
+        vivacidade que observam lugares mexidos por todos os componentes não
+        reduzem.
+  \item \textbf{Dependência estrutural}: a leitura dos arcos sobre-aproxima a
+        dependência real; uma rede cujos componentes compartilham lugares
+        ``por precaução'' reduz menos. Nunca reduz errado por isso.
+  \item \textbf{Fórmulas com \emph{dead}} fora dos formatos reconhecidos vão
+        para o grafo completo.
+  \item \textbf{Por entrada}: como no modo padrão, cada amostra na marcação
+        inicial tem seus próprios grafos; a redução não generaliza vereditos
+        de uma amostra para outra. Para ``toda entrada'', a análise estrutural
+        das guardas (B4) continua sendo a ferramenta.
+\end{itemize}
+
+% ============================================================================
+\chapter*{Referências}
+\addcontentsline{toc}{chapter}{Referências}
+% ============================================================================
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+\small
+\item C.~Baier, J.-P.~Katoen. \emph{Principles of Model Checking}. MIT Press,
+      2008. Capítulo~8 (redução por ordem parcial).
+\item E.~M.~Clarke, O.~Grumberg, D.~Kroening, D.~Peled, H.~Veith.
+      \emph{Model Checking}, 2.ª ed. MIT Press, 2018.
+\item R.~Gerth, R.~Kuiper, D.~Peled, W.~Penczek. A partial order approach to
+      branching time logic model checking. \emph{Information and Computation}
+      150(2), 1999.
+\item P.~Godefroid. \emph{Partial-Order Methods for the Verification of
+      Concurrent Systems}. LNCS 1032, Springer, 1996.
+\item K.~Jensen, L.~M.~Kristensen. \emph{Coloured Petri Nets: Modelling and
+      Validation of Concurrent Systems}. Springer, 2009. Capítulo~8
+      (\emph{Advanced State Space Methods}).
+\item L.~M.~Kristensen, A.~Valmari. Improved question-guided stubborn set
+      methods for state properties. \emph{ICATPN 2000}, LNCS 1825, 2000.
+\item D.~Peled. All from one, one for all: on model checking using
+      representatives. \emph{CAV 1993}, LNCS 697, 1993.
+\item A.~Valmari. Stubborn sets for reduced state space generation.
+      \emph{Advances in Petri Nets 1990}, LNCS 483, 1991.
+\item A.~Valmari, H.~Hansen. Stubborn set intuition explained.
+      \emph{Transactions on Petri Nets and Other Models of Concurrency XII},
+      LNCS 10470, 2017.
+\end{itemize}
+
+\end{document}

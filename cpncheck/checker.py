@@ -43,8 +43,12 @@ from .formula import Context
 from .net import CPNNet
 from .profile import Profile, detect
 from .properties import Property
+from .reduction import Dependency, ReducedChecker
 from .result import ModelCheckResult, PropertyResult
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
+
+#: Accepted values of the ``reduction`` argument of :meth:`CPNModelChecker.check`.
+REDUCTIONS = (None, "stubborn")
 
 __all__ = ["CPNModelChecker", "check_cpn"]
 
@@ -119,6 +123,7 @@ class CPNModelChecker:
                if self.input_places else ())
         self.own_sample = own[0] if own else None
         self.width = len(self.own_sample) if self.own_sample else 0
+        self._dependency: Optional[Dependency] = None
 
     # Property listing the identifiers this checker will answer.
     @property
@@ -297,6 +302,117 @@ class CPNModelChecker:
             data={"terminal_components": len(ss.terminal_sccs),
                   "representatives": traces})
 
+    # Method to evaluate every property on stubborn-set reduced graphs.
+    def _evaluate_reduced(self, sample=None
+                          ) -> Tuple[Dict[str, PropertyResult], Dict[str, Any]]:
+        """Decide the properties of one input with partial-order reduction.
+
+        Each property is split into parts and every part is decided on the
+        least-explored graph that provably gives the full graph's verdict
+        (:mod:`cpncheck.reduction`). The home-marking property is read off the
+        deadlock graph when the net terminates -- a finite acyclic graph has a
+        home marking exactly when it has one dead marking -- and otherwise
+        needs the full graph.
+
+        Args:
+            sample (optional): The input, or None for the file's own marking.
+
+        Returns:
+            tuple: ``({id: PropertyResult}, statistics)``.
+        """
+        initial = None
+        if sample is not None:
+            initial = self.cnet.initial_marking(self.as_sample(sample),
+                                                places=self.input_places)
+        if self._dependency is None:
+            self._dependency = Dependency(self.cnet)
+        rc = ReducedChecker(self.cnet, self._dependency, self.groups,
+                            initial=initial, max_nodes=self.max_nodes)
+        res: Dict[str, PropertyResult] = {}
+        plans: Dict[str, str] = {}
+        for pid, formula in self.formulas.items():
+            t0 = time.perf_counter()
+            holds, cex, plan = rc.decide(formula)
+            if cex is not None:
+                cex.input = sample
+                cex.data["input_places"] = self.input_places
+            detail = "" if holds else (str(cex) if cex is not None else
+                                       "; ".join(plan.reasons[:2])
+                                       or "reduced graph over budget")
+            res[pid] = PropertyResult(pid, holds, detail,
+                                      time.perf_counter() - t0,
+                                      spec=self.catalog.get(pid), cex=cex)
+            plans[pid] = plan.summary()
+
+        for pid, reason in self.unavailable.items():
+            res[pid] = PropertyResult(pid, None, reason,
+                                      spec=self.catalog.get(pid))
+
+        for pid, kind in self.scc_props.items():
+            t0 = time.perf_counter()
+            if kind != "home":                     # pragma: no cover - guard
+                res[pid] = PropertyResult(pid, None,
+                                          f"unknown SCC property kind {kind!r}",
+                                          spec=self.catalog.get(pid))
+                continue
+            res[pid] = self._home_reduced(rc, pid, sample, plans)
+            res[pid].elapsed = time.perf_counter() - t0
+        stats = rc.stats()
+        stats["plans"] = plans
+        base = rc.graph("deadlock")
+        stats.update({"nodes": base.n_nodes, "arcs": base.n_arcs,
+                      "dead": len(base.dead), "reduction": "stubborn"})
+        return res, stats
+
+    # Method to decide the home-marking property with the reduced graphs.
+    def _home_reduced(self, rc: ReducedChecker, pid: str, sample,
+                      plans: Dict[str, str]) -> PropertyResult:
+        """Home marking from the deadlock graph, or the full graph if needed.
+
+        When every occurrence sequence is finite the full graph is acyclic,
+        its terminal components are its dead markings, and the reduced graph
+        has the same dead markings; so a home marking exists exactly when
+        there is one dead marking. A net with an infinite occurrence sequence
+        gets the full graph.
+
+        Args:
+            rc (ReducedChecker): The reduced checker of this input.
+            pid (str): The property id.
+            sample (optional): The input.
+            plans (dict): Updated with the graph used.
+
+        Returns:
+            PropertyResult: The verdict.
+        """
+        spec = self.catalog.get(pid)
+        terminating = rc.terminating()
+        ss = rc.graph("deadlock" if terminating else "full")
+        plans[pid] = "deadlock" if terminating else "full"
+        if not ss.complete:
+            return PropertyResult(pid, None, "occurrence graph over budget",
+                                  spec=spec)
+        if terminating:
+            if len(ss.dead) == 1:
+                return PropertyResult(pid, True, "terminating with one dead "
+                                      "marking, which is the home marking",
+                                      spec=spec)
+            first = ss.dead[:2]
+            cex = Counterexample(
+                "witness", input=sample,
+                note=(f"{len(ss.dead)} dead markings: no marking is reachable "
+                      f"from all others; after {ss.trace(first[0])} and after "
+                      f"{ss.trace(first[1])} the runs can no longer meet"),
+                data={"terminal_components": len(ss.dead),
+                      "representatives": [ss.trace(v) for v in first],
+                      "reduction": "deadlock"})
+            return PropertyResult(pid, False, str(cex), spec=spec, cex=cex)
+        if ss.home:
+            return PropertyResult(pid, True, f"{len(ss.home)} home marking(s), "
+                                  f"{len(ss.terminal_sccs)} terminal SCC",
+                                  spec=spec)
+        cex = self._no_home_marking(ss, sample)
+        return PropertyResult(pid, False, str(cex), spec=spec, cex=cex)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -305,7 +421,8 @@ class CPNModelChecker:
     # Method to verify the net for one or more inputs.
     def check(self, samples=None, classifier=None, use_final: bool = True,
               test_samples=None, max_nodes: Optional[int] = None,
-              verbose: bool = False) -> ModelCheckResult:
+              verbose: bool = False,
+              reduction: Optional[str] = None) -> ModelCheckResult:
         """Verify every applicable property.
 
         Args:
@@ -319,12 +436,23 @@ class CPNModelChecker:
                 input, so it is cheap enough for a whole test set.
             max_nodes (int, optional): Occurrence-graph budget.
             verbose (bool): Print progress.
+            reduction (str, optional): ``"stubborn"`` decides every property
+                on stubborn-set reduced graphs (:mod:`cpncheck.reduction`)
+                instead of the full occurrence graph. The verdicts are the
+                same; the graph statistics are not, so no CPN Tools oracle
+                values are produced in that mode.
 
         Returns:
             ModelCheckResult: Verdicts, statistics and the expected CPN Tools
             values.
+
+        Raises:
+            ValueError: For an unknown ``reduction``.
         """
         t0 = time.time()
+        if reduction not in REDUCTIONS:
+            raise ValueError(f"reduction must be one of {REDUCTIONS}, "
+                             f"not {reduction!r}")
         if max_nodes is not None:
             self.max_nodes = int(max_nodes)
         xs = self._sample_list(samples)
@@ -336,6 +464,15 @@ class CPNModelChecker:
         for i, x in enumerate(xs):
             if verbose:
                 print(f"  [mc] input {i + 1}/{len(xs)}")
+            if reduction == "stubborn":
+                part, rstats = self._evaluate_reduced(x)
+                if not rstats["complete"]:
+                    warnings.append(f"a reduced graph exceeded {self.max_nodes} "
+                                    "markings: the properties it decides have "
+                                    "no verdict")
+                stats = stats or rstats
+                self._merge(merged, part)
+                continue
             ss = self.state_space(x)
             if not ss.complete:
                 warnings.append(f"occurrence graph exceeded {self.max_nodes} "
@@ -492,7 +629,8 @@ def check_cpn(path: str, samples=None, classifier=None,
               use_final: bool = True, test_samples=None,
               max_nodes: int = DEFAULT_MAX_NODES,
               verbose: bool = False, profile=None,
-              prelude: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
+              prelude: Optional[Dict[str, Any]] = None,
+              reduction: Optional[str] = None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -507,6 +645,7 @@ def check_cpn(path: str, samples=None, classifier=None,
         verbose (bool): Print progress.
         profile (Profile, optional): The profile to use.
         prelude (dict, optional): Names added to the net's ML declarations.
+        reduction (str, optional): ``"stubborn"`` for partial-order reduction.
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
@@ -516,4 +655,4 @@ def check_cpn(path: str, samples=None, classifier=None,
                               profile=profile, prelude=prelude)
     return checker.check(samples=samples, classifier=classifier,
                          use_final=use_final, test_samples=test_samples,
-                         verbose=verbose)
+                         verbose=verbose, reduction=reduction)

@@ -45,10 +45,17 @@ class StateSpace:
         terminal_sccs (list): SCC indices with no arc leaving them.
         home (list): Home markings (nodes of the unique terminal SCC).
         elapsed (float): Generation time in seconds.
+        enabled (list|None): For a reduced graph, the transition of every
+            binding element enabled at each node -- the arcs alone list only
+            the expanded ones. None for a full graph, whose arcs are all of
+            them.
+        reduction (str|None): The reduction kind (:mod:`cpncheck.reduction`),
+            or None for the full occurrence graph.
     """
 
     # Method to hold the graph data.
-    def __init__(self, net, markings, succ, complete, elapsed, parent):
+    def __init__(self, net, markings, succ, complete, elapsed, parent,
+                 enabled=None, reduction=None):
         """Create the state space and compute its SCC decomposition.
 
         Args:
@@ -58,8 +65,14 @@ class StateSpace:
             complete (bool): Whether exploration finished.
             elapsed (float): Generation time.
             parent (list): BFS parents.
+            enabled (list, optional): Enabled transitions per node, for a
+                reduced graph.
+            reduction (str, optional): The reduction kind, for a reduced
+                graph.
         """
         self.net = net
+        self.enabled = enabled
+        self.reduction = reduction
         self.markings = markings
         self.succ = succ
         self.complete = complete
