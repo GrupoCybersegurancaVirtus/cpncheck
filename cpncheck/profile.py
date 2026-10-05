@@ -225,6 +225,33 @@ class Profile:
         """
         return ()
 
+    # Method to compute a report beside the verdicts.
+    def state_space_report(self, net, ss) -> Optional[Dict[str, Any]]:
+        """Figures read off a complete occurrence graph, beside the verdicts.
+
+        Args:
+            net (ColouredNet): The flattened net.
+            ss (StateSpace): The complete occurrence graph.
+
+        Returns:
+            dict|None: ``{"report": {...}, "oracle": {key: value}}`` -- the
+            report shown to the user and the same figures under the keys of
+            :meth:`oracle_queries` -- or None for no report.
+        """
+        return None
+
+    # Method to give the CPN Tools queries matching the report.
+    def oracle_queries(self, net) -> Dict[str, str]:
+        """CPN Tools expressions for the report's figures, by oracle key.
+
+        Args:
+            net (ColouredNet): The flattened net.
+
+        Returns:
+            dict: ``{key: string-valued ML expression}``.
+        """
+        return {}
+
     # Method to render the profile for debugging.
     def __repr__(self):
         """Return a short representation.

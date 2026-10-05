@@ -182,6 +182,8 @@ class ColouredNet:
         self.places: List[Dict[str, Any]] = []
         self.transitions: List[Dict[str, Any]] = []
         self.port_of: Dict[Tuple[str, str], int] = {}
+        #: How many times each page is instantiated.
+        self.page_instances: Dict[str, int] = collections.Counter()
         self._flatten()
         self.index = {p["gid"]: i for i, p in enumerate(self.places)}
         self.consumers: Dict[int, List[int]] = collections.defaultdict(list)
@@ -358,6 +360,8 @@ class ColouredNet:
         fusion_of = self._fusion_groups()
 
         def expand(page, prefix, fused):
+            self.page_instances[page["name"]] += 1
+            instance = self.page_instances[page["name"]]
             pid_of = {}
             for lid, pl in page["places"].items():
                 if lid in fused and lid in fusion_of:
@@ -371,7 +375,9 @@ class ColouredNet:
                     places[gid] = {"gid": gid, "name": pl["name"],
                                    "page": page["name"], "port": pl.get("port"),
                                    "initmark": pl.get("initmark"),
-                                   "colset": pl.get("type")}
+                                   "colset": pl.get("type"),
+                                   "instance": instance,
+                                   "ml": f"{page['ml']}'{pl['ml']}"}
                 if pl.get("port"):
                     self.port_of[(page["name"], pl["name"])] = gid
             for tid, tr in page["transitions"].items():
@@ -394,7 +400,9 @@ class ColouredNet:
                             f"{a['orient']!r} is not supported")
                 trans.append({"gid": f"{prefix}/{tr['name']}", "name": tr["name"],
                               "page": page["name"], "guard_text": tr["guard"],
-                              "in_raw": ins, "out_raw": outs})
+                              "in_raw": ins, "out_raw": outs,
+                              "instance": instance,
+                              "ml": f"{page['ml']}'{tr['ml']}"})
             for tid, tr in page["transitions"].items():
                 if not tr["subpage"]:
                     continue

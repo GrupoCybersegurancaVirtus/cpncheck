@@ -38,7 +38,38 @@ for r in result.failures:
 ```
 
 `ModelCheckResult` exposes `passed`, `failures`, `skipped`, `properties`,
-`stats`, `oracle`, `report()`, `to_dict()`, `latex_rows()` and `latex_table()`.
+`stats`, `oracle`, `report_data`, `report()`, `to_dict()`, `latex_rows()` and
+`latex_table()`.
+
+**CPNCheck does not need CPN Tools.** It is pure Python with no dependencies:
+reading the `.cpn`, the CPN ML, the occurrence graph, CTL, reduction and
+counterexamples are all its own. CPN Tools is only used by `cpncheck oracle`,
+the optional cross-check that proves the answers right; those tests skip
+themselves when it is not installed, and a test runs the checker with the
+oracle module blocked so that this cannot change by accident.
+
+### Any net: the state-space report
+
+A net that no specific profile recognises gets the default one, which reports
+what CPN Tools' state-space report does:
+
+```bash
+cpncheck check SimpleProtocol.cpn
+```
+
+| | | |
+|---|---|---|
+| R1 | Deadlock freedom | `AG !dead` |
+| R2 | Termination | `AF dead` |
+| R3 | Home marking | one terminal SCC |
+| R4 | No dead transitions | `forall t: EF EN(t)` |
+| R5 | All transitions live | `forall t: AG EF EN(t)` |
+
+They are facts, printed YES/NO, and never fail a check -- a protocol meant to
+stop has dead markings and is not wrong for it. Below them come the integer
+bounds of every place and the dead and live transition instances. Every figure
+is compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
+`UpperInteger`, `LowerInteger`) by the oracle tests.
 
 `python examples/walkthrough.py` runs all of it on the nets under `tests/nets`
 and prints what each layer produced, step by step — the XML, the compiled

@@ -269,6 +269,11 @@ class CPNModelChecker:
                                       spec=self.catalog.get(pid), cex=cex)
             if holds is not None:
                 oracle[pid] = "true" if holds else "false"
+
+        extra = self.profile.state_space_report(self.cnet, ss)
+        if extra:
+            self._report = extra.get("report", {})
+            oracle.update(extra.get("oracle", {}))
         return res, oracle
 
     # Method to show why no marking is reachable from every other.
@@ -458,6 +463,7 @@ class CPNModelChecker:
         xs = self._sample_list(samples)
         merged: "collections.OrderedDict[str, PropertyResult]" = \
             collections.OrderedDict()
+        self._report = None
         stats: Dict[str, Any] = {}
         oracle: Dict[str, str] = {}
         warnings: List[str] = []
@@ -508,7 +514,8 @@ class CPNModelChecker:
             (pid, merged[pid]) for pid in self.catalog if pid in merged)
         return ModelCheckResult(self.path, self.family, ordered, stats,
                                 samples=len(xs), tested=tested, warnings=warnings,
-                                elapsed=time.time() - t0, oracle=oracle)
+                                elapsed=time.time() - t0, oracle=oracle,
+                                report=self._report)
 
     @staticmethod
     def _merge(target: Dict[str, PropertyResult], part: Dict[str, PropertyResult]):
@@ -568,6 +575,7 @@ class CPNModelChecker:
                                                   semantics="askctl")
             elif self.scc_props.get(pid) == "home":
                 q[pid] = "Bool.toString (length (ListHomeMarkings ()) > 0)"
+        q.update(self.profile.oracle_queries(self.cnet))
         return prog.declarations(), q
 
     # Method to write the ASK-CTL script matching this model for CPN Tools.

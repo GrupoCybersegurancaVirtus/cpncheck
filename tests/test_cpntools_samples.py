@@ -76,3 +76,32 @@ def test_a_supported_sample_agrees_with_cpntools(path):
                                  timeout=600)
     assert not report["errors"], report["errors"]
     assert report["agree"], report["rows"]
+
+
+@pytest.mark.skipif(os.environ.get("CPNCHECK_CPNTOOLS") != "1",
+                    reason="set CPNCHECK_CPNTOOLS=1 to compare with CPN Tools")
+@pytest.mark.parametrize("path", SAMPLES, ids=IDS)
+def test_the_state_space_report_agrees_with_cpntools(path):
+    """R1-R5, dead and live transitions and every place bound, as CPN Tools.
+
+    CPN Tools is asked through its own functions (ListDeadTIs, ListLiveTIs,
+    UpperInteger, LowerInteger) and the ASK-CTL rendering of R1-R5.
+    """
+    from cpncheck.oracle import CPNToolsOracle, compare_with_oracle
+
+    reason = CPNTOOLS_CANNOT_RUN.get(os.path.basename(path))
+    if reason:
+        pytest.skip(f"CPN Tools cannot run it headless: {reason}")
+    try:
+        ss = build_state_space(ColouredNet(CPNNet(path)), ORACLE_BUDGET)
+    except UnsupportedNet:
+        pytest.skip("not supported yet")
+    if not ss.complete:
+        pytest.skip(f"more than {ORACLE_BUDGET} markings")
+    oracle = CPNToolsOracle()
+    if oracle.missing():
+        pytest.skip("CPN Tools engine incomplete")
+    report = compare_with_oracle(path, oracle=oracle, timeout=600)
+    assert not report["errors"], report["errors"]
+    assert report["agree"], [r for r in report["rows"] if not r[3]]
+    assert any(key.startswith("bound_") for key, *_ in report["rows"])

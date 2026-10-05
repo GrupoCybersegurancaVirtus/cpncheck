@@ -809,6 +809,8 @@ def _dead_guarded(f: Formula) -> bool:
     Returns:
         bool: True for that shape.
     """
+    if isinstance(f, Not) and isinstance(f.operand, Dead):
+        return True                              # AG !dead: no dead marking
     if not isinstance(f, Or):
         return False
     guards = [g for g in f.operands

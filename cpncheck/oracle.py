@@ -81,9 +81,15 @@ try {
     for (var k = 0; k < job.queries.length; k++) {
         var key = job.queries[k][0], expr = job.queries[k][1];
         var q0 = java.lang.System.currentTimeMillis();
-        var res = ev("val pyra_it = " + expr + ";");
-        var m = /val pyra_it = "([^"]*)" : string/.exec(res);
-        if (m) { out.values[key] = m[1]; } else { out.errors[key] = res.substring(0, 1500); }
+        try {
+            var res = ev("val pyra_it = " + expr + ";");
+            // SML breaks a long answer over several lines.
+            var m = /val pyra_it =\s*"([^"]*)"\s*: string/.exec(res);
+            if (m) { out.values[key] = m[1]; } else { out.errors[key] = res.substring(0, 1500); }
+        } catch (qe) {
+            // One query that does not compile must not hide the others.
+            out.errors[key] = String(qe).substring(0, 1500);
+        }
         out.log.push(key + " " + (java.lang.System.currentTimeMillis() - q0) + "ms");
     }
 } catch (e) {

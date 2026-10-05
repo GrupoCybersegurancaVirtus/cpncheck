@@ -74,10 +74,17 @@ class PropertyResult:
     def status(self) -> str:
         """Status label.
 
+        A ``report`` property states a fact rather than a requirement, so it
+        reads ``YES``/``NO``.
+
         Returns:
-            str: ``"PASS"``, ``"FAIL"`` or ``"SKIP"``.
+            str: ``"PASS"``, ``"FAIL"``, ``"YES"``, ``"NO"`` or ``"SKIP"``.
         """
-        return "SKIP" if self.holds is None else ("PASS" if self.holds else "FAIL")
+        if self.holds is None:
+            return "SKIP"
+        if self.spec.kind == "report":
+            return "YES" if self.holds else "NO"
+        return "PASS" if self.holds else "FAIL"
 
     # Method to render the verdict for debugging.
     def __repr__(self):
@@ -103,11 +110,13 @@ class ModelCheckResult:
         warnings (list): Non-fatal problems.
         oracle (dict): The values CPN Tools is expected to print for the input
             in the file's initial marking (see :mod:`cpntools_oracle`).
+        report (dict): The profile's state-space report (place bounds, dead
+            and live transitions), when it produces one.
     """
 
     # Method to build a model-checking result.
     def __init__(self, path, family, properties, stats, samples=1, tested=0,
-                 warnings=None, elapsed=0.0, oracle=None):
+                 warnings=None, elapsed=0.0, oracle=None, report=None):
         """Create a result.
 
         Args:
@@ -120,6 +129,7 @@ class ModelCheckResult:
             warnings (list, optional): Warnings.
             elapsed (float): Total time in seconds.
             oracle (dict, optional): Expected CPN Tools values.
+            report (dict, optional): The state-space report.
         """
         self.path = path
         self.family = family
@@ -130,16 +140,19 @@ class ModelCheckResult:
         self.warnings = list(warnings or [])
         self.elapsed = elapsed
         self.oracle = dict(oracle or {})
+        self.report_data = dict(report or {})
 
     # Property telling whether every evaluated property holds.
     @property
     def passed(self) -> bool:
         """Whether no evaluated property was violated.
 
+        Report properties state facts and do not count.
+
         Returns:
             bool: True if nothing failed (skipped properties do not count).
         """
-        return all(r.holds is not False for r in self.properties.values())
+        return not self.failures
 
     # Property listing the violated properties.
     @property
@@ -147,9 +160,10 @@ class ModelCheckResult:
         """Violated properties.
 
         Returns:
-            list: Results whose verdict is False.
+            list: Results whose verdict is False, report facts excepted.
         """
-        return [r for r in self.properties.values() if r.holds is False]
+        return [r for r in self.properties.values()
+                if r.holds is False and r.spec.kind != "report"]
 
     # Property listing the properties that could not be evaluated.
     @property
@@ -182,6 +196,7 @@ class ModelCheckResult:
             "samples": self.samples, "tested": self.tested,
             "elapsed": self.elapsed, "stats": self.stats,
             "warnings": self.warnings, "oracle": self.oracle,
+            "report": self.report_data,
             "properties": {
                 pid: {"name": r.spec.name, "formula": r.spec.ctl,
                       "method": r.spec.method, "kind": r.spec.kind,
@@ -245,14 +260,51 @@ class ModelCheckResult:
                     lines.append(f"        decided on: {plan}")
                 if r.detail and r.holds is not True:
                     lines.append(f"        -> {r.detail}")
+        lines.extend(self._report_lines())
         lines.append("")
-        n_pass = sum(1 for r in self.properties.values() if r.holds is True)
-        lines.append(f"  {n_pass} passed, {len(self.failures)} failed, "
-                     f"{len(self.skipped)} skipped -- "
-                     f"{'VERIFIED' if self.passed else 'VIOLATION FOUND'}")
+        facts = [r for r in self.properties.values()
+                 if r.spec.kind == "report" and r.holds is not None]
+        n_pass = sum(1 for r in self.properties.values()
+                     if r.holds is True and r.spec.kind != "report")
+        if facts and len(facts) + len(self.skipped) == len(self.properties):
+            lines.append(f"  {len(facts)} facts reported, "
+                         f"{len(self.skipped)} skipped")
+        else:
+            lines.append(f"  {n_pass} passed, {len(self.failures)} failed, "
+                         f"{len(self.skipped)} skipped -- "
+                         f"{'VERIFIED' if self.passed else 'VIOLATION FOUND'}")
         for w in self.warnings:
             lines.append(f"  [warning] {w}")
         return "\n".join(lines)
+
+    # Method to render the profile's state-space report.
+    def _report_lines(self, limit: int = 40) -> List[str]:
+        """Place bounds and dead/live transitions, when the profile gave them.
+
+        Args:
+            limit (int): Rows shown per table before eliding.
+
+        Returns:
+            list: Report lines (empty when there is no report).
+        """
+        rep = self.report_data
+        if not rep:
+            return []
+        lines = ["", "  State space report", "  " + "-" * 78]
+        bounds = rep.get("bounds", [])
+        if bounds:
+            lines.append(f"  {'place':<56}{'lower':>8}{'upper':>8}")
+            for gid, low, high in bounds[:limit]:
+                lines.append(f"  {gid[:56]:<56}{low:>8}{high:>8}")
+            if len(bounds) > limit:
+                lines.append(f"  ... {len(bounds) - limit} more places")
+        for key, title in (("dead_transitions", "dead transitions"),
+                           ("live_transitions", "live transitions")):
+            names = rep.get(key, [])
+            shown = ", ".join(names[:limit]) if names else "none"
+            more = f" ... {len(names) - limit} more" if len(names) > limit else ""
+            lines.append(f"  {title} ({len(names)}): {shown}{more}")
+        return lines
 
     # Method to escape a formula for a LaTeX texttt cell.
     @staticmethod
@@ -283,7 +335,8 @@ class ModelCheckResult:
         """
         out = []
         for pid, r in self.properties.items():
-            res = {"PASS": r"\cmark", "FAIL": r"\xmark", "SKIP": "--"}[r.status]
+            res = {"PASS": r"\cmark", "FAIL": r"\xmark", "SKIP": "--",
+                   "YES": "yes", "NO": "no"}[r.status]
             out.append(f"{pid} & {r.spec.name} & "
                        f"\\texttt{{{self._latex_escape(r.spec.ctl)}}} & "
                        f"{r.spec.method} & {res} & {r.elapsed:.3f} \\\\")

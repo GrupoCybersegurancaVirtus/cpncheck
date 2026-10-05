@@ -51,12 +51,23 @@ phase 2**: they are what turns the samples into a measured result.
 
 ## Phase 2 -- the tree domain leaves the core
 
+* **Done:** a default profile for every net, the CPN Tools state-space report
+  (`cpncheck/profiles/statespace_report.py`): R1 deadlock freedom, R2
+  termination, R3 home marking, R4 no dead transitions, R5 all transitions
+  live, reported as YES/NO facts that never fail a check, plus the integer
+  bounds of every place and the dead and live transition instances. On the 7
+  samples that fit the budget, **every one of those figures agrees with CPN
+  Tools** (191 values), asked through CPN Tools' own functions. Getting there
+  fixed two things in the ASK-CTL generator: names are spelled as CPN Tools
+  spells them (each character an identifier cannot hold becomes `_`, in the
+  name as drawn) with their instance number, and the oracle no longer loses an
+  answer SML prints over several lines, nor all answers after one that fails.
+* CPN Tools is not needed to use CPNCheck; a test runs the checker with the
+  oracle module blocked.
 * The tree profile and its mutation operators move to pyruleanalyzer and are
   registered as a plugin (entry point `cpncheck.profiles`).
 * `class_labels`, `feature_names`, `classifier`, `use_final` and `--labels`
   stop being arguments of the generic checker; they become profile options.
-* A default profile for every net: the CPN Tools state-space report (dead
-  markings, home markings, place bounds, live and dead transitions).
 * User properties without Python: a query file or a CLI option.
 * The generated ASK-CTL script stops saying "pyRuleAnalyzer".
 

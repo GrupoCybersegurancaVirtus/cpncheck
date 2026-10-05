@@ -27,6 +27,7 @@ dead marking: ``EV(phi)`` means ``AF(phi or dead)``, so a net that stops before
 """
 
 import collections
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import formula as F
@@ -98,8 +99,7 @@ class MLProgram:
         Returns:
             str: ``(fn n => size (Mark.Page'Place 1 n))``.
         """
-        p = self.net.places[pidx]
-        return f"(fn n => size (Mark.{p['page']}'{p['name']} 1 n))"
+        return f"(fn n => size ({self.multiset(pidx)}))"
 
     # Method to render a list of token counters.
     def marks(self, places: Sequence[int]) -> str:
@@ -124,7 +124,7 @@ class MLProgram:
             str: ``Mark.Page'Place 1 n``.
         """
         p = self.net.places[pidx]
-        return f"Mark.{p['page']}'{p['name']} 1 n"
+        return f"Mark.{_ml_of(p)} {p.get('instance', 1)} n"
 
     # Method to declare and name an arc predicate for a transition group.
     def group(self, transitions: Sequence[int]) -> str:
@@ -147,8 +147,9 @@ class MLProgram:
             return self._groups[key]
         name = f"isG{len(self._groups)}"
         cases = " | ".join(
-            f"Bind.{self.net.transitions[ti]['page']}'"
-            f"{self.net.transitions[ti]['name']} _ => true" for ti in key)
+            f"Bind.{_ml_of(self.net.transitions[ti])} "
+            f"({self.net.transitions[ti].get('instance', 1)}, _) => true"
+            for ti in key)
         self.declare("fun enCount isT n = length (List.filter isT (OutArcs n));")
         self.declare(f"fun {name} a = case ArcToBE a of {cases} | _ => false;")
         self._groups[key] = name
@@ -282,6 +283,22 @@ def _fold(op: str, parts: List[str]) -> str:
     for part in reversed(parts[:-1]):
         out = f"{op}({part}, {out})"
     return out
+
+
+# Function to give the CPN ML path of a flattened place or transition.
+def _ml_of(element) -> str:
+    """``Page'Name`` as CPN Tools spells it in ``Mark.`` and ``Bind.``.
+
+    Args:
+        element (dict): A place or transition of the flattened net.
+
+    Returns:
+        str: The path; built from the names when the record has none.
+    """
+    if element.get("ml"):
+        return element["ml"]
+    clean = lambda s: re.sub(r"[^A-Za-z0-9_']", "_", s.strip())  # noqa: E731
+    return f"{clean(element['page'])}'{clean(element['name'])}"
 
 
 # Function to render a Python token value as a CPN ML literal.

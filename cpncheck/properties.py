@@ -32,7 +32,9 @@ class Property:
         id (str): Identifier used by the article (``A1``, ``B2``, ``C3a``, ...).
         name (str): Short name.
         ctl (str): The formula the check implements (ASCII).
-        kind (str): ``"desired"``, ``"undesired"`` or ``"structural"``.
+        kind (str): ``"desired"``, ``"undesired"``, ``"structural"`` or
+            ``"report"`` -- a fact about the net, shown as YES/NO, which never
+            makes a check fail.
         families (tuple): Free-form note on which nets it suits.
         description (str): What the property guarantees -- and only that.
         method (str): One of :data:`METHODS`.

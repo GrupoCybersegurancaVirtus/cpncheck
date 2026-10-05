@@ -49,6 +49,7 @@ class CPNNet:
                 fusion = pl.find("fusioninfo")
                 places[pl.get("id")] = {
                     "name": _name(pl),
+                    "ml": _ml_name(pl.findtext("text") or ""),
                     "initmark": (pl.find("initmark").findtext("text")
                                  if pl.find("initmark") is not None else None),
                     "port": port.get("type") if port is not None else None,
@@ -59,6 +60,7 @@ class CPNNet:
                 sub = tr.find("subst")
                 trans[tr.get("id")] = {
                     "name": _name(tr),
+                    "ml": _ml_name(tr.findtext("text") or ""),
                     "guard": (tr.find("cond").findtext("text")
                               if tr.find("cond") is not None else None),
                     "subpage": sub.get("subpage") if sub is not None else None,
@@ -84,7 +86,8 @@ class CPNNet:
                              if ar.find("annot") is not None else "").strip(),
                 })
 
-            entry = {"id": page.get("id"), "name": pname, "places": places,
+            entry = {"id": page.get("id"), "name": pname,
+                     "ml": _ml_name(pname), "places": places,
                      "transitions": trans, "arcs": arcs}
             self.pages[pname] = entry
             self.page_by_id[page.get("id")] = entry
@@ -169,6 +172,23 @@ def _name(element) -> str:
         str: The name.
     """
     return " ".join((element.findtext("text") or "").split())
+
+
+# Function to give the identifier CPN Tools uses for a name in CPN ML.
+def _ml_name(raw: str) -> str:
+    """The name as ``Mark.Page'Place`` and ``Bind.Page'Trans`` spell it.
+
+    CPN Tools replaces every character an ML identifier cannot hold by ``_``,
+    one for one, in the name as drawn: ``Acknowledg-`` then a line break then
+    ``ment`` becomes ``Acknowledg__ment``. Confirmed against CPN Tools 4.0.1.
+
+    Args:
+        raw (str): The name as written in the file.
+
+    Returns:
+        str: The ML identifier.
+    """
+    return re.sub(r"[^A-Za-z0-9_']", "_", raw.strip())
 
 
 # Function to read the text of an inscription child of a net element.
