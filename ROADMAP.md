@@ -27,7 +27,8 @@ measured by the oracle rather than assumed.
 * Names that wrap over several lines in the drawing are read on one line.
 * Refused by name instead of ignored: timed colour sets and time
   inscriptions, code segments, transition priorities other than `P_NORMAL`,
-  synchronous channels, unknown arc orientations.
+  synchronous channels, unknown arc orientations. (Phases 3 and 4 have since
+  lifted all but channels, impure code and real or random time.)
 * `tests/test_net_reading.py` checks each construct against the plain net it
   abbreviates; `tests/test_cpntools_samples.py` runs every sample (skipped
   when CPN Tools is not installed) and, with `CPNCHECK_CPNTOOLS=1`, compares
@@ -82,7 +83,7 @@ phase 2**: they are what turns the samples into a measured result.
   traceback.
 * **Done:** the generated ASK-CTL script says CPNCheck (`CPNCHECK_REPORT`).
 
-## Phase 3 -- more of CPN ML (the sample-blocking items: done)
+## Phase 3 -- more of CPN ML (done)
 
 Done, each pinned down in `tests/test_cpnml_nets.py`:
 
@@ -111,17 +112,61 @@ infinite, like SimpleProtocol without its limit place) and one,
 DiningPhilosophers_COMM_Mon, cannot be run by CPN Tools headless. Refused: 6
 timed nets, 3 with code segments.
 
-Still to do in this phase:
+Then the rest of the phase, in `tests/test_timed.py`:
 
-* Variables bound by the guard (`[x = f(y)]`).
-* User-declared datatypes; transition priorities.
-* Code segments without side effects (their `output` variables bind like a
-  guard); code with side effects stays refused.
+* Variables defined by the guard (`[y = x * 2]` with `y` on no input arc).
+* Transition priorities (`P_HIGH`, `P_NORMAL`, `P_LOW` or any integer
+  expression): only the most urgent enabled binding elements may occur.
+* Code segments without side effects: `input (...); output (...); action
+  e;` binds its outputs when the transition occurs. Code that prints, reads
+  files, draws random numbers or uses a library CPNCheck does not have stays
+  refused, naming what it uses.
+* User datatypes: what CPN Tools' samples declare (enumerations, products,
+  records, lists, index and subset colour sets) is covered; no sample is
+  blocked by a datatype any more.
 
-## Phase 4 -- timed nets
+## Phase 4 -- timed nets (done)
 
-Integer global clock and token timestamps, as in CPN Tools' timed state space.
-Real-valued time and random delays stay refused.
+Integer model time, as in CPN Tools: tokens of a timed colour set carry
+timestamps, the marking carries the global clock, and the enabled binding
+elements are those enabled at the earliest time at which any is (the clock
+then moves to it). Output tokens get the occurrence time plus the
+transition's delay plus the arc's (`@+`); `time()` reads the clock; a
+timestamp in an initial marking (`1`x@3 +++ 1`y@0`) is read. A delay on an
+arc covers its whole inscription, as CPN Tools reads it (`if b then 1`x else
+empty @+7` delays both branches). Real-valued time (`@++`) and random delays
+(`CS.ran()`, `exponential`) stay refused: such a net has no occurrence graph.
+
+Two findings from validating against CPN Tools 4.0.1 (now possible: its
+oracle failed on every timed net because Access/CPN's Java view of the
+marking types timed places as untimed; the oracle skips that step):
+
+* **Which token goes.** When a timed place holds several ready tokens of the
+  value a binding takes, CPNCheck makes each choice its own successor (the
+  binding records it). CPN Tools explores some of these choices, and not
+  always the same ones: its node and arc counts for one net vary from run to
+  run. So timed nets are checked by **containment**
+  (`oracle.compare_graph_containment`): every node and arc CPN Tools finds is
+  in CPNCheck's graph. On two finite variants of TimedResourceAlloc (336 and
+  3 270 nodes in CPN Tools, 344 and 3 313 in CPNCheck) nothing is missing and
+  the dead markings agree (48 and 246).
+* **CPN Tools 4.0.1 expands timed nodes in a shifted frame.** Before computing
+  a node's successors its state-space tool subtracts the node's creation time
+  from every timestamp (`CPN'subtract`, `OGToSimDataGen.sml`) but leaves the
+  clock where it was, so tokens become ready early (a token stamped 21 is
+  taken at 13). This is the creation-time reduction half applied while it is
+  off. CPNCheck follows the timed semantics of the literature (and of CPN
+  Tools' simulator); `ColouredNet(..., compat="cpntools-4.0.1")` reproduces
+  the shift, and only the comparison uses it.
+
+Partial-order reduction is not sound with a global clock or priorities, so a
+timed net, or one using priorities, is always checked on the full graph
+(`net.reducible`).
+
+Result on the samples: **16 of 24 explored, 0 reader errors**;
+ProtocolWithTimer and TimedResourceAlloc (both infinite) are explored now.
+The 8 refusals are all outside the target: 4 code segments with side effects
+or full SML, 3 random values, 1 real-valued time.
 
 ## State-space reduction
 

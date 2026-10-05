@@ -243,6 +243,23 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
     return ColourSet(name, "unknown", timed=timed)
 
 
+# Function to build a CS.ran that refuses, with a reason.
+def _no_random(name: str):
+    """``CS.ran ()`` draws a random colour: it has no occurrence graph.
+
+    Args:
+        name (str): The colour set.
+
+    Returns:
+        callable: A function raising :class:`MLError` when called.
+    """
+    def ran(_unit):
+        raise MLError(f"{name}.ran() draws a random value; a net that does "
+                      "has no deterministic occurrence graph and is not "
+                      "supported")
+    return ran
+
+
 # Function to multiply multisets into a multiset of tuples.
 def _product_of_multisets(parts) -> MultiSet:
     """``PR.mult (ms1, ms2, ...)``: every combination, counts multiplied.
@@ -368,6 +385,7 @@ class Declarations:
         self.globals.update(self.symbols)
         for name, colset in self.colsets.items():
             self.globals[f"{name}.all"] = self._all_of(colset)
+            self.globals[f"{name}.ran"] = _no_random(name)
             if colset.kind == "product":
                 self.globals[f"{name}.mult"] = _product_of_multisets
 

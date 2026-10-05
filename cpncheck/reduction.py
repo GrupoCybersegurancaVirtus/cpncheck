@@ -363,7 +363,8 @@ class _Atoms:
         if isinstance(f, MaxTokens):
             return all(len(m[p]) <= f.limit for p in sel(f.selector))
         if isinstance(f, TokensIn):
-            return all(tok in f.domain for p in sel(f.selector) for tok in m[p])
+            return all(tok in f.domain for p in sel(f.selector)
+                       for tok in self.ctx.net.values_of(p, m[p]))
         if isinstance(f, Enabled):
             return any(counts.get(t, 0) for t in sel(f.selector))
         if isinstance(f, EnabledCount):
@@ -372,7 +373,8 @@ class _Atoms:
             total = sum(len(m[p]) for p in sel(f.selector))
             return COMPARISONS[f.op](total, f.limit)
         if isinstance(f, Holds):
-            return any(f.value in m[p] for p in sel(f.selector))
+            return any(f.value in self.ctx.net.values_of(p, m[p])
+                       for p in sel(f.selector))
         if isinstance(f, EnabledTally):
             total = sum(counts.get(t, 0) for t in sel(f.selector))
             return COMPARISONS[f.op](total, f.limit)
@@ -444,7 +446,8 @@ class _Atoms:
             if now:
                 return union(places, dep.givers)
             return smallest(dep.takers.get(p, frozenset()) for p in places
-                            if any(tok not in f.domain for tok in m[p]))
+                            if any(tok not in f.domain
+                                   for tok in self.ctx.net.values_of(p, m[p])))
         if isinstance(f, Enabled):
             group = sel(f.selector)
             if not now:
@@ -667,7 +670,7 @@ def _enabled(net: ColouredNet, dep: Dependency, marking: tuple,
         t = net.transitions[ti]
         if any(len(marking[p]) < k for p, k in t["needs"].items()):
             continue
-        for env in net._bindings(marking, t):
+        for env, _ready in net._bindings(marking, t):
             fresh.append((ti, tuple(sorted(env.items())), env))
     out = kept + fresh
     out.sort(key=lambda e: e[0])
@@ -1060,6 +1063,10 @@ class ReducedChecker:
             tuple: ``(kind, graph)``.
         """
         kind, invariant = classify(part)
+        if not getattr(self.net, "reducible", True):
+            # A global clock or priorities make transitions depend on each
+            # other in ways the arcs do not show: no reduction is sound.
+            kind, invariant = "full", None
         visible: FrozenSet[int] = frozenset()
         if kind == "stutter":
             visible = self.dep.touching(self.atoms.observed(part))

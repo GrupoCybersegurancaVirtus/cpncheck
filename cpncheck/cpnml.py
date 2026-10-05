@@ -32,6 +32,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 __all__ = [
     "MLError",
     "MultiSet",
+    "Delayed",
+    "Stamped",
+    "TimedToken",
     "EnumValue",
     "IndexValue",
     "IndexConstructor",
@@ -64,7 +67,8 @@ KEYWORDS = {
 
 #: Operators, longest first so that ``<=`` is not read as ``<`` then ``=``.
 OPERATORS = [
-    "=>", "->", "<=", ">=", "<>", "::", "++", "--", "@", "^^", "^", "+", "-", "*",
+    "=>", "->", "<=", ">=", "<>", "::", "+++", "++", "--", "@++", "@+", "@", "^^", "^", "+", "-",
+    "*",
     "/",
     "<", ">", "=", "|", ":", ",", ";", "(", ")", "[", "]", "{", "}", "#", "~",
     "`", "_",
@@ -153,10 +157,14 @@ BINOPS = {
     # Multisets: ++ and -- bind loosest, so 2`x ++ 1`y is (2`x) ++ (1`y); the
     # coefficient binds tighter than a comparison and looser than arithmetic,
     # so (n+1)`x and 2*k`x read as written.
-    "++": (3, "left"), "--": (3, "left"), "`": (4.5, "right"),
+    "+++": (3, "left"), "++": (3, "left"), "--": (3, "left"), "`": (4.5, "right"),
     "=": (4, "left"), "<>": (4, "left"), "<": (4, "left"), ">": (4, "left"),
     "<=": (4, "left"), ">=": (4, "left"),
-    "::": (5, "right"), "@": (5, "right"), "^^": (5, "right"),
+    "::": (5, "right"), "^^": (5, "right"),
+    # Time: x@t stamps a token, ms@+d delays a multiset. Both bind looser than
+    # the coefficient and tighter than ++, so 1`x@+3 ++ 1`y is
+    # ((1`x)@+3) ++ (1`y). As in SML, "else e @+ d" delays e only.
+    "@": (4, "left"), "@+": (4, "left"),
     "+": (6, "left"), "-": (6, "left"), "^": (6, "left"),
     "*": (7, "left"), "/": (7, "left"), "div": (7, "left"), "mod": (7, "left"),
 }
@@ -641,7 +649,7 @@ def _terms_of(tree) -> List[Tuple[Any, Any]]:
     Returns:
         list: ``(coefficient tree or None, value tree)`` pairs.
     """
-    if tree[0] == "binop" and tree[1] == "++":
+    if tree[0] == "binop" and tree[1] in ("++", "+++"):
         return _terms_of(tree[2]) + _terms_of(tree[3])
     if tree[0] == "binop" and tree[1] == "`":
         return [(tree[2], tree[3])]
@@ -946,6 +954,187 @@ def _ms_diff(left, right) -> "MultiSet":
         if out.get(value, 0) < count:
             raise MLError(f"cannot subtract {count}`{value!r}: not contained")
         out[value] -= count
+    return MultiSet(out)
+
+
+# Class marking a token produced with a delay.
+class Delayed(tuple):
+    """``x @+ d``: a token whose timestamp is the occurrence time plus ``d``.
+
+    Only an output arc of a timed place may produce one; the coloured net
+    turns it into a :class:`TimedToken` when the transition occurs.
+    """
+
+    __slots__ = ()
+
+    # Method to build a delayed token.
+    def __new__(cls, value, delay: int):
+        """Create the marker.
+
+        Args:
+            value: The token value.
+            delay (int): The delay.
+
+        Returns:
+            Delayed: The marker.
+        """
+        return super().__new__(cls, (value, delay))
+
+    # Method to render the marker.
+    def __repr__(self):
+        """Render as ``v@+d``.
+
+        Returns:
+            str: The text.
+        """
+        return f"{self[0]!r}@+{self[1]}"
+
+
+# Class marking a token with an absolute timestamp.
+class Stamped(tuple):
+    """``x @ t``: a token carrying the timestamp ``t`` (initial markings)."""
+
+    __slots__ = ()
+
+    # Method to build a stamped token.
+    def __new__(cls, value, time: int):
+        """Create the marker.
+
+        Args:
+            value: The token value.
+            time (int): The timestamp.
+
+        Returns:
+            Stamped: The marker.
+        """
+        return super().__new__(cls, (value, time))
+
+    # Method to render the marker.
+    def __repr__(self):
+        """Render as ``v@t``.
+
+        Returns:
+            str: The text.
+        """
+        return f"{self[0]!r}@{self[1]}"
+
+
+# Class holding a token of a timed place.
+class TimedToken(tuple):
+    """A token of a timed place: a value and the model time it is ready at.
+
+    Two tokens with the same value and different timestamps are different
+    tokens, so a marking holding them is a different marking -- as in CPN
+    Tools' timed state space.
+    """
+
+    __slots__ = ()
+
+    # Method to build a timed token.
+    def __new__(cls, value, time: int):
+        """Create the token.
+
+        Args:
+            value: The token value.
+            time (int): Its timestamp.
+
+        Returns:
+            TimedToken: The token.
+        """
+        return super().__new__(cls, (value, time))
+
+    # Property giving the token's value.
+    @property
+    def value(self):
+        """The colour.
+
+        Returns:
+            The value.
+        """
+        return self[0]
+
+    # Property giving the token's timestamp.
+    @property
+    def time(self) -> int:
+        """The model time from which the token is ready.
+
+        Returns:
+            int: The timestamp.
+        """
+        return self[1]
+
+    # Method to render the token.
+    def __repr__(self):
+        """Render as ``v@t``.
+
+        Returns:
+            str: The text.
+        """
+        return f"{self[0]!r}@{self[1]}"
+
+
+# Function to check that a time is an integer.
+def _model_time(value) -> int:
+    """A model time: integer time only, as in CPN Tools' timed state space.
+
+    Args:
+        value: The time.
+
+    Returns:
+        int: The time.
+
+    Raises:
+        MLError: For a real or other non-integer time.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise MLError(f"model time must be an integer, not {value!r} "
+                      "(real-time nets are not supported)")
+    return value
+
+
+# Function to delay a token or every element of a multiset.
+def _delay(value, delay) -> "MultiSet":
+    """``ms @+ d``.
+
+    Args:
+        value: A token or a multiset.
+        delay (int): The delay.
+
+    Returns:
+        MultiSet: The delayed tokens; delays of nested ``@+`` add up.
+    """
+    delay = _model_time(delay)
+    out: Dict[Any, int] = {}
+    for element, count in _as_multiset(value).items():
+        if isinstance(element, Delayed):
+            element = Delayed(element[0], element[1] + delay)
+        else:
+            element = Delayed(element, delay)
+        out[element] = out.get(element, 0) + count
+    return MultiSet(out)
+
+
+# Function to stamp a token, or append two lists.
+def _at(left, right):
+    """``x @ t`` with an integer ``t`` stamps a token; with lists, appends.
+
+    CPN ML uses ``@`` for timestamps (``^^`` appends lists), but SML code in a
+    net's declarations may still append lists with it.
+
+    Args:
+        left: A token, a multiset, or a list.
+        right: An integer time, or a list.
+
+    Returns:
+        The stamped tokens, or the appended list.
+    """
+    if isinstance(right, tuple) and isinstance(left, tuple):
+        return left + right
+    time = _model_time(right)
+    out: Dict[Any, int] = {}
+    for element, count in _as_multiset(left).items():
+        element = Stamped(element, time)
+        out[element] = out.get(element, 0) + count
     return MultiSet(out)
 
 
@@ -1339,10 +1528,13 @@ _BINARY: Dict[str, Callable] = {
     "<=": lambda a, b: a <= b,
     ">=": lambda a, b: a >= b,
     "::": lambda a, b: (a,) + b,
-    "@": lambda a, b: a + b,
+    "@": lambda a, b: _at(a, b),             # a timestamp (or SML list append)
+    "@+": lambda a, b: _delay(a, b),         # a delay on produced tokens
     "^^": lambda a, b: a + b,                # CPN ML list concatenation
     "`": _ms_scale,
     "++": _ms_union,
+    # Timed multiset sum: the tokens already carry their timestamps.
+    "+++": _ms_union,
     "--": _ms_diff,
 }
 
@@ -1564,6 +1756,10 @@ def _curry(function):
 #: The standard names a net may use without declaring them.
 PRELUDE: Dict[str, Any] = {
     "empty": MultiSet(),
+    # Transition priorities, as CPN Tools declares them.
+    "P_HIGH": 100,
+    "P_NORMAL": 1000,
+    "P_LOW": 10000,
     "abs": abs,
     "real": float,
     "floor": lambda x: int(__import__("math").floor(x)),

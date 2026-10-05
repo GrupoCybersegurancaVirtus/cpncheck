@@ -34,8 +34,9 @@ CANNOT_RUN = {
 
 #: Refusal messages grouped into the roadmap item that would lift them.
 CATEGORIES = [
-    (r"timed|time inscription", "timed nets (phase 4)"),
-    (r"code segment", "code segments"),
+    (r"random|exponential|uniform", "random values (no occurrence graph)"),
+    (r"@\+\+|real-valued|integer delays", "real-valued time"),
+    (r"code segment", "code segments with side effects or full SML"),
     (r"priority", "transition priorities (phase 3)"),
     (r"channel", "synchronous channels"),
     (r"fusion", "fusion set conflict"),

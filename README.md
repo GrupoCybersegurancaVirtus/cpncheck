@@ -284,15 +284,28 @@ refused by name, never quietly ignored.
 Also read: multisets anywhere in an expression, input arcs that are
 expressions rather than patterns, enumeration constants, `index` colour sets,
 `subset ... by`/`with`, `CS.all()`, `CS.mult`, fusion sets, double arcs and
-several prime pages. Still missing: timed nets, code segments, priorities,
-synchronous channels, variables bound by a guard, and user-declared
-datatypes. Anything outside the fragment raises `UnsupportedNet` rather than
-being mis-read — a wrong reading of a guard is a wrong verdict.
+several prime pages, variables defined by a guard, transition priorities,
+code segments without side effects (`input`/`output`/`action`), and timed
+nets with integer time (timestamps, `@+` delays on arcs and transitions,
+`time()`, the earliest-time rule). Not supported: synchronous channels, code
+with side effects, real-valued time (`@++`) and random values (`CS.ran()`,
+`exponential`) — the last two have no occurrence graph. Anything outside the
+fragment raises `UnsupportedNet` rather than being mis-read — a wrong reading
+of a guard is a wrong verdict.
+
+**Timed nets.** When a timed place holds several ready tokens of the value a
+binding takes, each choice of token is its own successor. CPN Tools 4.0.1
+explores a subset of those choices (not the same one on every run), so timed
+nets are compared with it by containment: `oracle.compare_graph_containment`
+checks that every node and arc it finds is in CPNCheck's graph. Stubborn-set
+reduction is not sound with a global clock or with priorities; such nets are
+always checked on the full graph.
 
 How far this reaches is measured on the 24 example models CPN Tools ships
-with: `python examples/cpntools_samples.py --oracle`. Today 15 are read and
-explored, and the 7 whose occurrence graph fits the budget agree with CPN Tools
-on every statistic. The plan to make CPNCheck check any net CPN Tools can
+with: `python examples/cpntools_samples.py --oracle`. Today 16 are read and
+explored, the 7 whose occurrence graph fits the budget agree with CPN Tools
+on every statistic, and the 8 refused are all outside the target (side
+effects, random values, real time). The plan to make CPNCheck check any net CPN Tools can
 analyse is in [ROADMAP.md](ROADMAP.md).
 
 ## Profiles and plugins

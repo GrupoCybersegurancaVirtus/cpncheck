@@ -546,9 +546,10 @@ class TokensIn(Formula):
         """
         places = ctx.select(self.selector)
         domain = self.domain
+        values_of = ctx.net.values_of
         return frozenset(v for v in ctx.all
                          if all(tok in domain for p in places
-                                for tok in ctx.ss.markings[v][p]))
+                                for tok in values_of(p, ctx.ss.markings[v][p])))
 
     # Method to describe the formula in a counterexample.
     def describe(self, ctx):
@@ -575,7 +576,7 @@ class TokensIn(Formula):
             str: The reason.
         """
         for p in ctx.select(self.selector):
-            for tok in ctx.ss.markings[node][p]:
+            for tok in ctx.net.values_of(p, ctx.ss.markings[node][p]):
                 if tok not in self.domain:
                     return (f"{ctx.net.places[p]['name']} holds {tok!r}, "
                             f"outside {sorted(self.domain)}")
@@ -957,8 +958,10 @@ class Holds(Formula):
         """
         places = ctx.select(self.selector)
         value = self.value
+        values_of = ctx.net.values_of
         return frozenset(v for v in ctx.all
-                         if any(value in ctx.ss.markings[v][p] for p in places))
+                         if any(value in values_of(p, ctx.ss.markings[v][p])
+                                for p in places))
 
     # Method to describe the formula in a counterexample.
     def describe(self, ctx):

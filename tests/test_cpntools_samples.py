@@ -58,13 +58,16 @@ def test_a_sample_is_read_or_refused_by_name(path):
                     reason="set CPNCHECK_CPNTOOLS=1 to compare with CPN Tools")
 @pytest.mark.parametrize("path", SAMPLES, ids=IDS)
 def test_a_supported_sample_agrees_with_cpntools(path):
-    from cpncheck.oracle import CPNToolsOracle, compare_state_space
+    from cpncheck.coloured import CPNTOOLS_401
+    from cpncheck.oracle import (CPNToolsOracle, compare_graph_containment,
+                                 compare_state_space)
 
     reason = CPNTOOLS_CANNOT_RUN.get(os.path.basename(path))
     if reason:
         pytest.skip(f"CPN Tools cannot run it headless: {reason}")
     try:
-        ss = build_state_space(ColouredNet(CPNNet(path)), ORACLE_BUDGET)
+        net = ColouredNet(CPNNet(path))
+        ss = build_state_space(net, ORACLE_BUDGET)
     except UnsupportedNet:
         pytest.skip("not supported yet")
     if not ss.complete:
@@ -72,6 +75,14 @@ def test_a_supported_sample_agrees_with_cpntools(path):
     oracle = CPNToolsOracle()
     if oracle.missing():
         pytest.skip("CPN Tools engine incomplete")
+    if net.timed:
+        # No unique graph to compare statistics of: see
+        # compare_graph_containment.
+        report = compare_graph_containment(path, oracle=oracle,
+                                           max_nodes=ORACLE_BUDGET,
+                                           timeout=600, compat=CPNTOOLS_401)
+        assert report["contained"], report
+        return
     report = compare_state_space(path, oracle=oracle, max_nodes=ORACLE_BUDGET,
                                  timeout=600)
     assert not report["errors"], report["errors"]

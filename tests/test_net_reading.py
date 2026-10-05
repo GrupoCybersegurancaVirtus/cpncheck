@@ -262,11 +262,10 @@ def _single(extras=None, timed=()):
 
 
 @pytest.mark.parametrize("kwargs,reason", [
-    (_single(timed=("INT",)), "timed nets"),
-    (_single({"time": "@+5"}), "time inscription"),
+    # Code with a side effect is outside the CPN ML fragment.
     (_single({"code": "input (x); action print (Int.toString x);"}),
-     "code segments"),
-    (_single({"priority": "P_HIGH"}), "priority"),
+     "code segment"),
+    (_single({"time": "@++5"}), "time inscription"),
     (_single({"channel": "ch !! x"}), "synchronous channels"),
 ])
 def test_unsupported_constructs_are_refused_by_name(tmp_path, kwargs, reason):
