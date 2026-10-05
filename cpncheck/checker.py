@@ -24,8 +24,8 @@
 
 The checker knows nothing about what the net computes. Which places and
 transitions matter, which properties apply and what a valid output is all come
-from the profile; see :mod:`cpncheck.profile` and
-:mod:`cpncheck.profiles.ml_trees`.
+from the profile; see :mod:`cpncheck.profile` and the default one,
+:mod:`cpncheck.profiles.statespace_report`.
 """
 
 import collections
@@ -65,26 +65,21 @@ class CPNModelChecker:
     disagreement between the net and a reference implementation is a real one.
 
     Example:
-        >>> mc = CPNModelChecker("model.cpn", class_labels=[0, 1])
+        >>> mc = CPNModelChecker("model.cpn", properties="AG !dead")
         >>> mc.check().passed
         True
     """
 
     # Method to load a .cpn model and choose its profile.
-    def __init__(self, path: str, feature_names: Optional[Sequence[str]] = None,
-                 class_labels: Optional[Sequence[int]] = None,
-                 max_nodes: int = DEFAULT_MAX_NODES,
+    def __init__(self, path: str, max_nodes: int = DEFAULT_MAX_NODES,
                  profile: Optional[Profile] = None,
                  prelude: Optional[Dict[str, Any]] = None,
-                 properties=None):
+                 properties=None,
+                 options: Optional[Dict[str, Any]] = None):
         """Parse and flatten a ``.cpn`` file, then resolve its properties.
 
         Args:
             path (str): The model.
-            feature_names (list, optional): Ordered field names, to map named
-                samples onto the fields of the input token.
-            class_labels (list, optional): The output domain. Without it the
-                profile decides, and the property is skipped if it cannot.
             max_nodes (int): Occurrence-graph budget; beyond it the state-space
                 properties get no verdict.
             profile (Profile, optional): The profile to use; detected from the
@@ -97,6 +92,9 @@ class CPNModelChecker:
                 :class:`~cpncheck.query.UserProperty`, of formula strings, or
                 one string holding a property file's text
                 (:mod:`cpncheck.query`).
+            options (dict, optional): Settings for the profile, whose meaning
+                is the profile's to define -- the checker only hands them on
+                (see the profile's documentation).
 
         Raises:
             UnsupportedNet: When no registered profile recognises the net.
@@ -111,27 +109,22 @@ class CPNModelChecker:
             raise UnsupportedNet(
                 f"{os.path.basename(path)}: no profile recognises this net; "
                 "pass one with profile=... (see cpncheck.profile)")
+        self.options: Dict[str, Any] = dict(options or {})
         self.family = self.profile.family(self.cnet)
         self.groups = self.profile.resolve_groups(self.cnet)
-        self.feature_names = list(feature_names) if feature_names else None
         self.max_nodes = int(max_nodes)
-        self.labels, self.label_source = self.profile.label_domain(
-            self.cnet, class_labels)
         self.formulas = collections.OrderedDict(self.profile.ctl_formulas(
-            self.cnet, self.groups, self.labels))
+            self.cnet, self.groups, self.options))
         self.scc_props = self.profile.scc_properties(self.cnet, self.groups)
         self.unavailable = dict(self.profile.unavailable(
-            self.cnet, self.groups, self.labels))
+            self.cnet, self.groups, self.options))
         self.catalog = collections.OrderedDict(
             getattr(self.profile, "catalog", collections.OrderedDict()))
         self.user_properties = self._add_user_properties(properties)
-        self.structure = (self.profile.structure(self.cnet)
-                          if hasattr(self.profile, "structure") else None)
         self.input_places = tuple(self.profile.input_places(self.cnet))
         own = (self.cnet.initial[self.input_places[0]]
                if self.input_places else ())
         self.own_sample = own[0] if own else None
-        self.width = len(self.own_sample) if self.own_sample else 0
         self._dependency: Optional[Dependency] = None
 
     # Method to parse the user's properties and add them to the catalog.
@@ -196,7 +189,7 @@ class CPNModelChecker:
         Returns:
             The token value.
         """
-        return self.profile.as_input_token(self.cnet, x, self.feature_names)
+        return self.profile.as_input_token(self.cnet, x, self.options)
 
     # Method to turn the samples argument into a list of record tuples.
     def _sample_list(self, samples) -> List[Optional[Tuple[float, ...]]]:
@@ -470,18 +463,18 @@ class CPNModelChecker:
 
 
     # Method to verify the net for one or more inputs.
-    def check(self, samples=None, classifier=None, use_final: bool = True,
-              test_samples=None, max_nodes: Optional[int] = None,
-              verbose: bool = False,
-              reduction: Optional[str] = None) -> ModelCheckResult:
+    def check(self, samples=None, reference=None, test_samples=None,
+              max_nodes: Optional[int] = None, verbose: bool = False,
+              reduction: Optional[str] = None,
+              options: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
         """Verify every applicable property.
 
         Args:
             samples: Inputs to model check, one occurrence graph each (a sample,
                 a list or a DataFrame). Defaults to the file's own initial
                 marking.
-            classifier: The classifier, to test prediction consistency (PC).
-            use_final (bool): Whether the net carries the refined rules.
+            reference: What the profile's conformance test compares the net
+                with (for the tree profile, the classifier); None skips it.
             test_samples: Inputs for conformance testing; defaults to
                 ``samples``. Testing runs one maximal occurrence sequence per
                 input, so it is cheap enough for a whole test set.
@@ -492,6 +485,8 @@ class CPNModelChecker:
                 instead of the full occurrence graph. The verdicts are the
                 same; the graph statistics are not, so no CPN Tools oracle
                 values are produced in that mode.
+            options (dict, optional): Profile settings for this run, over
+                the ones given to the constructor.
 
         Returns:
             ModelCheckResult: Verdicts, statistics and the expected CPN Tools
@@ -501,6 +496,8 @@ class CPNModelChecker:
             ValueError: For an unknown ``reduction``.
         """
         t0 = time.time()
+        if options:
+            self.options.update(options)
         if reduction not in REDUCTIONS:
             raise ValueError(f"reduction must be one of {REDUCTIONS}, "
                              f"not {reduction!r}")
@@ -548,16 +545,21 @@ class CPNModelChecker:
 
         merged.update(self.profile.static_checks(self))
         tested = 0
-        if classifier is not None:
+        if reference is not None:
             pool = xs if test_samples is None else self._sample_list(test_samples)
             txs = [x if x is not None else self.own_sample for x in pool]
-            verdict = self.profile.conformance(self, classifier, txs, use_final)
+            verdict = self.profile.conformance(self, reference, txs,
+                                               self.options)
             if verdict is not None:
                 merged[verdict.id] = verdict
                 tested = len(txs)
 
+        # Catalog order first; a verdict the catalog does not describe is
+        # still reported -- dropping it would read as if it had passed.
         ordered = collections.OrderedDict(
             (pid, merged[pid]) for pid in self.catalog if pid in merged)
+        for pid, verdict in merged.items():
+            ordered.setdefault(pid, verdict)
         return ModelCheckResult(self.path, self.family, ordered, stats,
                                 samples=len(xs), tested=tested, warnings=warnings,
                                 elapsed=time.time() - t0, oracle=oracle,
@@ -642,7 +644,7 @@ class CPNModelChecker:
         """
         decl, queries = self.ml_program()
         out = [
-            "(* ASK-CTL cross-check generated by pyRuleAnalyzer for",
+            "(* ASK-CTL cross-check generated by CPNCheck for",
             f"   {os.path.basename(self.path)} ({self.family}).",
             "   1. open the net in CPN Tools and apply Enter State Space;",
             "   2. evaluate  use \"<this file>\";  in an auxiliary text.",
@@ -656,13 +658,13 @@ class CPNModelChecker:
             "",
             decl,
             "",
-            "val PYRA_RESULTS = [",
+            "val CPNCHECK_RESULTS = [",
             ",\n".join(f'  ("{k}", {v})' for k, v in queries.items()),
             "];",
-            'val PYRA_REPORT = String.concat (map (fn (k, v) => k ^ "=" ^ v ^ "\\n")'
-            " PYRA_RESULTS);",
-            "print PYRA_REPORT;",
-            "PYRA_REPORT;",
+            'val CPNCHECK_REPORT = String.concat (map (fn (k, v) => k ^ "=" ^ v '
+            '^ "\\n") CPNCHECK_RESULTS);',
+            "print CPNCHECK_REPORT;",
+            "CPNCHECK_REPORT;",
         ]
         directory = os.path.dirname(os.path.abspath(filepath))
         os.makedirs(directory, exist_ok=True)
@@ -677,24 +679,19 @@ class CPNModelChecker:
 
 
 # Function to model check a generated .cpn file in one call.
-def check_cpn(path: str, samples=None, classifier=None,
-              feature_names: Optional[Sequence[str]] = None,
-              class_labels: Optional[Sequence[int]] = None,
-              use_final: bool = True, test_samples=None,
+def check_cpn(path: str, samples=None, reference=None, test_samples=None,
               max_nodes: int = DEFAULT_MAX_NODES,
               verbose: bool = False, profile=None,
               prelude: Optional[Dict[str, Any]] = None,
               reduction: Optional[str] = None,
-              properties=None) -> ModelCheckResult:
+              properties=None,
+              options: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
         path (str): The ``.cpn`` file.
         samples: Inputs to model check (defaults to the file's own).
-        classifier: Classifier for the conformance test.
-        feature_names (list, optional): Ordered feature names.
-        class_labels (list, optional): Label domain for A6.
-        use_final (bool): Whether the net carries the refined rules.
+        reference: What the profile's conformance test compares with.
         test_samples: Inputs for conformance testing.
         max_nodes (int): Occurrence-graph budget.
         verbose (bool): Print progress.
@@ -702,14 +699,14 @@ def check_cpn(path: str, samples=None, classifier=None,
         prelude (dict, optional): Names added to the net's ML declarations.
         reduction (str, optional): ``"stubborn"`` for partial-order reduction.
         properties (optional): User properties (:mod:`cpncheck.query`).
+        options (dict, optional): Profile settings.
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
     """
-    checker = CPNModelChecker(path, feature_names=feature_names,
-                              class_labels=class_labels, max_nodes=max_nodes,
-                              profile=profile, prelude=prelude,
-                              properties=properties)
-    return checker.check(samples=samples, classifier=classifier,
-                         use_final=use_final, test_samples=test_samples,
+    checker = CPNModelChecker(path, max_nodes=max_nodes, profile=profile,
+                              prelude=prelude, properties=properties,
+                              options=options)
+    return checker.check(samples=samples, reference=reference,
+                         test_samples=test_samples,
                          verbose=verbose, reduction=reduction)

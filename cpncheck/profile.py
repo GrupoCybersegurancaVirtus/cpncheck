@@ -10,12 +10,27 @@ A profile is selected automatically by :func:`detect`, which asks each
 registered profile whether it recognises the net, most specific first. Callers
 with their own nets register their own profile and pass it explicitly, or let
 detection find it.
+
+Another package can ship a profile as a plugin, under the entry-point group
+``cpncheck.profiles``::
+
+    [project.entry-points."cpncheck.profiles"]
+    my_nets = "my_package.cpn_profile:PROFILE"
+
+The entry point names a :class:`Profile` instance (or class). Plugins are
+loaded the first time profiles are listed; one that fails to load is reported
+with a warning and skipped, never allowed to stop the checker.
+
+Settings a profile needs from its caller -- a label domain, the names of an
+input's fields -- arrive as ``options``, a dict the checker hands on without
+reading.
 """
 
 import collections
+import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-__all__ = ["Profile", "register", "profiles", "detect"]
+__all__ = ["Profile", "register", "profiles", "detect", "load_plugins"]
 
 #: Registered profiles, in registration order.
 _REGISTRY: List["Profile"] = []
@@ -74,27 +89,8 @@ class Profile:
         """
         return {}
 
-    # Method to determine the domain of the output tokens.
-    def label_domain(self, net, declared: Optional[Sequence[int]]
-                     ) -> Tuple[Optional[List[int]], str]:
-        """Choose the token domain a "valid output" property checks against.
-
-        Args:
-            net (ColouredNet): The flattened net.
-            declared (sequence, optional): A domain the caller declared.
-
-        Returns:
-            tuple: ``(domain or None, where it came from)``.
-        """
-        if declared is not None:
-            try:
-                return sorted({int(c) for c in declared}), "declared"
-            except (TypeError, ValueError):
-                pass
-        return None, "undeclared"
-
     # Method to build the temporal properties that apply to a net.
-    def ctl_formulas(self, net, groups, labels
+    def ctl_formulas(self, net, groups, options
                      ) -> "collections.OrderedDict[str, Any]":
         """The formulas to evaluate, keyed by property id.
 
@@ -106,7 +102,7 @@ class Profile:
         Args:
             net (ColouredNet): The flattened net.
             groups (dict): The resolved groups.
-            labels (list, optional): The token domain, when known.
+            options (dict): The caller's settings for the profile.
 
         Returns:
             OrderedDict: ``property id -> Formula``.
@@ -114,7 +110,7 @@ class Profile:
         return collections.OrderedDict()
 
     # Method to name the properties that apply but cannot be answered.
-    def unavailable(self, net, groups, labels) -> Dict[str, str]:
+    def unavailable(self, net, groups, options) -> Dict[str, str]:
         """Properties this net has, which this run cannot decide.
 
         A property the net simply does not have -- an aggregation property in
@@ -127,7 +123,7 @@ class Profile:
         Args:
             net (ColouredNet): The flattened net.
             groups (dict): The resolved groups.
-            labels (list, optional): The token domain, when known.
+            options (dict): The caller's settings for the profile.
 
         Returns:
             dict: ``property id -> why it cannot be decided``.
@@ -160,14 +156,14 @@ class Profile:
         return collections.OrderedDict()
 
     # Method to compare the net with a reference implementation.
-    def conformance(self, checker, reference, samples, use_final: bool):
+    def conformance(self, checker, reference, samples, options):
         """Conformance of the net with a reference function on some inputs.
 
         Args:
             checker (CPNModelChecker): The checker.
             reference: Whatever the profile accepts as a reference.
             samples (list): The inputs.
-            use_final (bool): Profile-specific flag passed through by the caller.
+            options (dict): The caller's settings for the profile.
 
         Returns:
             PropertyResult|None: The verdict, or None when not supported.
@@ -188,8 +184,9 @@ class Profile:
         """Whatever the operators need to know about a net before editing it.
 
         The driver passes the result to every operator untouched, so its shape
-        is entirely up to the profile. Two conventional keys are read by the
-        driver itself: ``"labels"``, reported as the mutant's output domain.
+        is entirely up to the profile. One key is read by the driver itself:
+        ``"options"``, the profile settings a mutant has to be checked with
+        (reported on every mutant).
 
         Args:
             path (str): The correct ``.cpn``.
@@ -200,13 +197,13 @@ class Profile:
         return None
 
     # Method to normalise an input into the token the net expects.
-    def as_input_token(self, net, x, feature_names=None):
+    def as_input_token(self, net, x, options=None):
         """Convert a caller's input into the token of the input place.
 
         Args:
             net (ColouredNet): The flattened net.
             x: The input, in whatever shape the caller uses.
-            feature_names (list, optional): Ordered field names.
+            options (dict, optional): The caller's settings.
 
         Returns:
             The token value.
@@ -257,7 +254,7 @@ class Profile:
         """Return a short representation.
 
         Returns:
-            str: ``<Profile ml_trees>``.
+            str: ``<Profile state-space report>``.
         """
         return f"<Profile {self.name}>"
 
@@ -269,20 +266,68 @@ def register(profile: Profile) -> Profile:
     Args:
         profile (Profile): The profile instance.
 
+    A second profile with the name of one already registered is ignored:
+    a plugin may be registered both through its entry point and by being
+    imported.
+
     Returns:
         Profile: The profile, so this can be used as a decorator.
     """
-    _REGISTRY.append(profile)
+    if not any(p.name == profile.name for p in _REGISTRY):
+        _REGISTRY.append(profile)
     return profile
+
+
+#: Whether the ``cpncheck.profiles`` entry points have been read.
+_PLUGINS_LOADED = False
+
+
+# Function to register the profiles other packages ship as plugins.
+def load_plugins() -> List[str]:
+    """Register every profile published under ``cpncheck.profiles``, once.
+
+    Returns:
+        list: The names of the entry points that could not be loaded, each
+        also reported as a warning.
+    """
+    global _PLUGINS_LOADED
+    if _PLUGINS_LOADED:
+        return []
+    _PLUGINS_LOADED = True
+    failed: List[str] = []
+    try:
+        from importlib.metadata import entry_points
+        found = entry_points()
+        group = (found.select(group="cpncheck.profiles")
+                 if hasattr(found, "select")
+                 else found.get("cpncheck.profiles", []))
+    except Exception:                          # no metadata: nothing to load
+        return failed
+    for ep in group:
+        try:
+            obj = ep.load()
+            profile = obj() if isinstance(obj, type) else obj
+            if not isinstance(profile, Profile):
+                raise TypeError(f"{ep.value} is not a cpncheck Profile")
+            register(profile)
+        except Exception as exc:               # a plugin must never break us
+            failed.append(ep.name)
+            warnings.warn(f"cpncheck: the profile plugin {ep.name!r} could "
+                          f"not be loaded: {exc}", RuntimeWarning)
+    return failed
 
 
 # Function to list the registered profiles.
 def profiles() -> List[Profile]:
     """Every registered profile, most specific first.
 
+    Plugins published under ``cpncheck.profiles`` are loaded on the first
+    call.
+
     Returns:
         list: The profiles.
     """
+    load_plugins()
     return sorted(_REGISTRY, key=lambda p: -p.priority)
 
 

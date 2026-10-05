@@ -1,5 +1,13 @@
 # Extraction from pyruleanalyzer — state and plan
 
+> **Later (step 8, see ROADMAP.md):** the tree profile and its mutation
+> operators -- `cpncheck/profiles/ml_trees.py` and `ml_trees_mutants.py` below
+> -- left CPNCheck for pyruleanalyzer (`pyruleanalyzer/cpn_profile.py`,
+> `pyruleanalyzer/cpn_mutants.py`), which publishes the profile as a
+> `cpncheck.profiles` plugin. The checker's `class_labels`, `feature_names`,
+> `classifier` and `use_final` became profile `options` and a `reference`. This
+> file describes the extraction as it was done and is not updated further.
+
 CPNCheck was extracted from `pyruleanalyzer`.
 
 * **Phase 1 — done.** Mechanical extraction: code moved and split, imports

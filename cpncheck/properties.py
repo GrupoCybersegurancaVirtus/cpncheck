@@ -6,9 +6,9 @@ technique that answers it and a sentence saying what holding it does and does
 not establish -- which is the part a reader of the report needs most.
 
 The descriptors of a family of nets are gathered into a catalog and handed to
-the checker by a :class:`~cpncheck.profile.Profile`; the catalog of the
-tree-ensemble nets is :data:`cpncheck.profiles.ml_trees.TREE_CATALOG`. Nothing
-here is specific to any family.
+the checker by a :class:`~cpncheck.profile.Profile`; the default profile's is
+:data:`cpncheck.profiles.statespace_report.REPORT_CATALOG`. Nothing here is
+specific to any family.
 """
 
 import collections

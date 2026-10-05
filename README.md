@@ -20,17 +20,19 @@ pip install -e .
 ## Use
 
 ```bash
-cpncheck check model.cpn --labels 0,1,2      # verify and print the report
+cpncheck check model.cpn                     # the state-space report
+cpncheck check model.cpn --props my.props    # plus your own properties
 cpncheck check model.cpn --json verdicts.json --latex
 cpncheck askctl model.cpn -o askctl.sml      # the same questions, for CPN Tools
-cpncheck mutants model.cpn mutants/          # one mutant per property
+cpncheck mutants model.cpn mutants/          # one mutant per property (profiles
+                                             # that supply mutation operators)
 cpncheck oracle model.cpn                    # run CPN Tools and compare
 ```
 
 ```python
 from cpncheck import check_cpn
 
-result = check_cpn("model.cpn", class_labels=[0, 1, 2])
+result = check_cpn("model.cpn", properties="AG !(has(Eat, ph(1)) & has(Eat, ph(2)))")
 print(result.report())
 assert result.passed
 for r in result.failures:
@@ -131,17 +133,11 @@ counterexample claims (and, for a lasso, returns to where the cycle began). A
 bug in the fixpoints cannot forge a trace that replays. The test suite requires
 every sequence from every mutant to replay, and requires a tampered one not to.
 
-**A structural finding comes with an input.** Guard disjointness holds or fails
-for *every* input, so a failure names no particular run — but the intersection
-of the two guards is a box, and a point in it is an input on which the overlap
-really happens. Feed it back and the per-input check fails too, on the same
-pair:
-
-```python
-witness = result.properties["B4"].cex.input
-again = check_cpn("model.cpn", samples=[witness], class_labels=[0, 1, 2])
-assert again.properties["B1"].holds is False     # now it is reachable
-```
+**A structural finding comes with an input.** A profile's structural check
+(guard disjointness, for the tree profile) holds or fails for *every* input,
+so a failure names no particular run — but it hands back a point on which the
+problem really happens, as the counterexample's `input`, to be checked with
+`samples=[...]`.
 
 ## What it does
 
@@ -171,7 +167,7 @@ cpncheck check model.cpn --reduction stubborn
 ```
 
 ```python
-result = check_cpn("model.cpn", class_labels=[0, 1, 2], reduction="stubborn")
+result = check_cpn("model.cpn", properties="AF dead", reduction="stubborn")
 ```
 
 With `reduction="stubborn"` every property is decided on a *stubborn-set*
@@ -299,13 +295,30 @@ explored, and the 7 whose occurrence graph fits the budget agree with CPN Tools
 on every statistic. The plan to make CPNCheck check any net CPN Tools can
 analyse is in [ROADMAP.md](ROADMAP.md).
 
+## Profiles and plugins
+
+What CPNCheck asks of a net comes from a *profile*. The built-in one, the
+state-space report, applies to every net. A package can publish a profile for
+its own kind of nets as a plugin, and CPNCheck picks it up when it is
+installed:
+
+```toml
+[project.entry-points."cpncheck.profiles"]
+my_nets = "my_package.cpn_profile:PROFILE"
+```
+
+A profile receives its settings as `options`, which CPNCheck hands on without
+reading them -- `CPNModelChecker(path, options={...})`, or `-O key=value` on
+the command line. A plugin that fails to load is reported as a warning and
+skipped. pyruleanalyzer's profile for the nets it generates from decision
+trees, random forests and gradient boosting is one such plugin: CPNCheck itself
+knows nothing about trees, and its tests run with no plugin at all.
+
 ## Status
 
 Pre-release, extracted from
 [pyruleanalyzer](https://github.com/GrupoCybersegurancaVirtus/pyruleanalyzer),
-where it verifies Hierarchical CPN models generated from decision trees, random
-forests and gradient boosting — now one profile among others
-(`cpncheck/profiles/ml_trees.py`).
+which now uses it through the plugin above.
 
 Agreement with CPN Tools is measured, not assumed: 28 nets — two correct ones
 and every mutant of each — agree on every statistic and every verdict, with 81

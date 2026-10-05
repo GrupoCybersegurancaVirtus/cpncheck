@@ -39,47 +39,10 @@ def _nets(tmp_path, name):
 # Verdicts
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name,labels", FIXTURES, ids=IDS)
-def test_reduced_verdicts_equal_full_verdicts(tmp_path, name, labels):
-    compared = 0
-    for m in _nets(tmp_path, name):
-        mc = CPNModelChecker(m["path"], class_labels=m["labels"] or labels)
-        full = mc.check()
-        reduced = mc.check(reduction="stubborn")
-        assert list(full.properties) == list(reduced.properties)
-        for pid, r in full.properties.items():
-            assert reduced.properties[pid].holds == r.holds, \
-                (m["name"], pid, reduced.properties[pid].detail)
-            compared += 1
-    assert compared > 150
-
-
-@pytest.mark.parametrize("name,labels", FIXTURES, ids=IDS)
-def test_reduced_counterexamples_replay(tmp_path, name, labels):
-    replayed = 0
-    for m in _nets(tmp_path, name):
-        mc = CPNModelChecker(m["path"], class_labels=m["labels"] or labels)
-        for r in mc.check(reduction="stubborn").failures:
-            assert r.cex is not None, (m["name"], r.id)
-            if r.cex.kind in ("finite", "lasso"):
-                assert r.cex.replay(mc.cnet), (m["name"], r.id, str(r.cex))
-                replayed += 1
-    assert replayed > 5
-
 
 # ---------------------------------------------------------------------------
 # The graphs themselves
 # ---------------------------------------------------------------------------
-
-@pytest.mark.parametrize("name,labels", FIXTURES, ids=IDS)
-def test_every_dead_marking_survives_the_reduction(tmp_path, name, labels):
-    for m in _nets(tmp_path, name):
-        net = ColouredNet(CPNNet(m["path"]))
-        full = build_state_space(net)
-        reduced = build_reduced(net, Dependency(net), "deadlock")
-        assert reduced.complete
-        assert sorted(reduced.markings[v] for v in reduced.dead) == \
-            sorted(full.markings[v] for v in full.dead), m["name"]
 
 
 @pytest.mark.parametrize("kind", ["deadlock", "stutter"])
@@ -184,15 +147,6 @@ def test_a_stutter_graph_respects_visibility():
 # Interface
 # ---------------------------------------------------------------------------
 
-def test_the_report_says_which_graph_decided_each_property():
-    result = check_cpn(os.path.join(NETS, "rf_multiclass.cpn"),
-                       class_labels=[0, 1, 2], reduction="stubborn")
-    text = result.report()
-    assert "stubborn sets" in text
-    assert "decided on: deadlock" in text
-    assert result.stats["reduction"] == "stubborn"
-    assert result.oracle == {}
-
 
 def test_an_unknown_reduction_is_refused():
     mc = CPNModelChecker(os.path.join(NETS, "rf_multiclass.cpn"))
@@ -200,11 +154,3 @@ def test_an_unknown_reduction_is_refused():
         mc.check(reduction="symmetry")
 
 
-def test_an_exhausted_budget_gives_no_verdict_and_says_why():
-    mc = CPNModelChecker(os.path.join(NETS, "rf_multiclass.cpn"),
-                         class_labels=[0, 1, 2])
-    result = mc.check(reduction="stubborn", max_nodes=8)
-    d2a = result.properties["D2a"]
-    assert d2a.holds is None
-    assert "cannot be reordered" in d2a.detail
-    assert result.properties["A1"].holds is True

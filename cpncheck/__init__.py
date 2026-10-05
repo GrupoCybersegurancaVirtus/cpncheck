@@ -7,7 +7,7 @@ Python, on the very ``.cpn`` file CPN Tools would open, and cross-checks its
 answers against CPN Tools itself.
 
     >>> from cpncheck import check_cpn
-    >>> result = check_cpn("model.cpn", class_labels=[0, 1])
+    >>> result = check_cpn("model.cpn", properties="AG !dead")
     >>> print(result.report())
 
 Layers, bottom up:

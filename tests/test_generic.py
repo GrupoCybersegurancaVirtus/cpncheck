@@ -20,7 +20,6 @@ from cpncheck.formula import (AF, AG, EF, AllMarked, And, Context, Dead,
                               MaxTokens, Not, Or, TokensIn)
 from cpncheck.net import CPNNet
 from cpncheck.profile import Profile, detect
-from cpncheck.profiles.ml_trees import MLTreeProfile
 from cpncheck.properties import Property
 from cpncheck.selectors import Explicit, Places, Transitions, outputs_of
 
@@ -130,28 +129,6 @@ def test_enabled_counts_arcs_not_transitions(ctx):
 # ASK-CTL rendering
 # ---------------------------------------------------------------------------
 
-def test_every_catalog_formula_renders_to_askctl():
-    for path, labels in ((GBDT, [0, 1]), (RF, [0, 1, 2])):
-        mc = CPNModelChecker(path, class_labels=labels)
-        decl, queries = mc.ml_program()
-        assert set(queries) >= set(mc.formulas)
-        for pid in mc.formulas:
-            assert queries[pid].startswith("Bool.toString (eval_node")
-        assert "val DEAD" in decl and "fun AFmax" in decl
-
-
-def test_the_generated_program_asks_about_every_property():
-    """Every property the checker answers is also asked of CPN Tools.
-
-    That the two engines then give the same answers is what ``cpncheck
-    oracle`` establishes; see tests/test_oracle.py.
-    """
-    for path, labels in ((GBDT, [0, 1]), (RF, [0, 1, 2])):
-        mc = CPNModelChecker(path, class_labels=labels)
-        queries = mc.ml_program()[1]
-        assert set(mc.property_ids) <= set(queries)
-        assert set(queries) <= set(mc.check().oracle)
-
 
 def test_askctl_uses_ev_only_for_the_askctl_reading(net):
     ctx = Context.static(net)
@@ -170,28 +147,6 @@ def test_an_empty_transition_group_is_refused(net):
 # ---------------------------------------------------------------------------
 # Profiles
 # ---------------------------------------------------------------------------
-
-def test_the_tree_profile_is_detected(net):
-    profile = detect(net)
-    assert profile is not None and profile.name == "ml_trees"
-
-
-def test_a_property_that_cannot_be_decided_is_skipped_not_hidden():
-    """"Does not apply" and "could not be answered" are different verdicts.
-
-    A net with no aggregation simply has no aggregation property, and it is
-    never mentioned. A net that *has* a label domain the checker cannot read
-    still has the valid-label property, and leaving it out would read as if it
-    had passed.
-    """
-    profile = MLTreeProfile()
-    net = ColouredNet(CPNNet(GBDT))
-    groups = profile.resolve_groups(net)
-    assert profile.unavailable(net, groups, None) == {
-        "A6": "label domain not declared; pass class_labels"}
-    assert profile.unavailable(net, groups, [0, 1]) == {}
-    assert "A6" not in profile.ctl_formulas(net, groups, None)
-    assert "A6" in profile.ctl_formulas(net, groups, [0, 1])
 
 
 def test_a_verdict_without_a_descriptor_still_prints():

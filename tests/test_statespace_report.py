@@ -53,9 +53,59 @@ def test_any_net_gets_the_default_profile(tmp_path):
     assert mc.profile.name == "state-space report"
 
 
-def test_the_tree_nets_keep_their_own_profile():
+def test_without_its_plugin_a_tree_net_is_just_a_net():
+    """CPNCheck knows nothing of trees: pyruleanalyzer's profile is a plugin."""
     mc = CPNModelChecker(os.path.join(HERE, "nets", "rf_multiclass.cpn"))
-    assert mc.profile.name == "ml_trees"
+    assert mc.profile.name == "state-space report"
+
+
+class _FakeEntryPoint:
+    """What importlib.metadata hands back for one published plugin."""
+
+    def __init__(self, name, target):
+        self.name, self.value, self._target = name, f"fake:{name}", target
+
+    def load(self):
+        if isinstance(self._target, Exception):
+            raise self._target
+        return self._target
+
+
+def _with_plugins(monkeypatch, *eps):
+    import importlib.metadata as md
+    import cpncheck.profile as P
+
+    class Found(list):
+        def select(self, group):
+            return [ep for ep in self if group == "cpncheck.profiles"]
+
+    monkeypatch.setattr(md, "entry_points", lambda: Found(eps))
+    monkeypatch.setattr(P, "_PLUGINS_LOADED", False)
+    monkeypatch.setattr(P, "_REGISTRY", list(P._REGISTRY))
+
+
+def test_a_plugin_profile_is_found_through_its_entry_point(tmp_path,
+                                                          monkeypatch):
+    from cpncheck.profile import Profile
+
+    class Counters(Profile):
+        name = "counters"
+        priority = 5
+
+        def matches(self, net):
+            return any(p["name"] == "C" for p in net.places)
+
+    _with_plugins(monkeypatch, _FakeEntryPoint("counters", Counters))
+    assert CPNModelChecker(_stop_net(tmp_path)).profile.name == "counters"
+
+
+def test_a_broken_plugin_warns_and_is_skipped(tmp_path, monkeypatch):
+    _with_plugins(monkeypatch,
+                  _FakeEntryPoint("broken", ImportError("no module x")),
+                  _FakeEntryPoint("not_a_profile", object()))
+    with pytest.warns(RuntimeWarning, match="could not be loaded"):
+        mc = CPNModelChecker(_stop_net(tmp_path))
+    assert mc.profile.name == "state-space report"
 
 
 def test_a_net_that_stops(tmp_path):
@@ -137,8 +187,8 @@ def test_cpncheck_runs_without_cpntools(tmp_path):
         "sys.modules['cpncheck.oracle'] = None\n"      # any import now fails
         "from cpncheck import check_cpn\n"
         f"a = check_cpn({net!r})\n"
-        f"b = check_cpn({tree!r}, class_labels=[0, 1])\n"
-        f"c = check_cpn({tree!r}, class_labels=[0, 1], reduction='stubborn')\n"
+        f"b = check_cpn({tree!r}, properties='AF dead')\n"
+        f"c = check_cpn({tree!r}, properties='AF dead', reduction='stubborn')\n"
         "assert a.properties and b.passed and c.passed\n"
         "print('ok')\n")
     root = os.path.abspath(os.path.join(HERE, ".."))

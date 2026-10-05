@@ -9,7 +9,7 @@ This module holds the machinery: :class:`CPNDocument`, which edits a ``.cpn``
 in place while keeping it a file CPN Tools can open, and the driver that writes
 one mutant per operator. The operators themselves are supplied by the profile,
 because what a meaningful fault *is* depends on what the net is for; see
-:mod:`cpncheck.profiles.ml_trees_mutants` for a worked set of sixteen.
+pyruleanalyzer's ``cpn_mutants`` for a worked set of sixteen.
 
 Edits only touch guards, inscriptions and arcs (copies of existing arcs), so a
 mutant is still a loadable net, and the same mutants can be given to both
@@ -293,9 +293,9 @@ def make_mutants(path: str, out_dir: str, names: Optional[List[str]] = None,
             detected from the net when omitted.
 
     Returns:
-        list: ``{"name", "targets", "description", "path", "labels"}`` per
-        mutant written. ``labels`` is the original net's output domain when the
-        profile reports one, which the checker needs for a domain property.
+        list: ``{"name", "targets", "description", "path", "options"}`` per
+        mutant written. ``options`` are the profile settings the mutant has to
+        be checked with, when the profile's analysis gives any.
 
     Raises:
         UnsupportedNet: When no profile recognises the net.
@@ -325,5 +325,5 @@ def make_mutants(path: str, out_dir: str, names: Optional[List[str]] = None,
         doc.save(dst)
         written.append({"name": op.name, "targets": op.targets,
                         "description": op.description, "path": dst,
-                        "labels": info.get("labels") or None})
+                        "options": dict(info.get("options") or {})})
     return written

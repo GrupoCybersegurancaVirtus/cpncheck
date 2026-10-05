@@ -17,17 +17,31 @@ import json
 import sys
 
 
-# Function to parse a comma-separated list of integers.
-def _labels(text):
-    """Parse ``--labels 0,1,2``.
+# Function to parse the -O KEY=VALUE settings for the profile.
+def _options(pairs):
+    """Turn ``-O class_labels=0,1,2 -O use_final=false`` into a dict.
+
+    Values are strings, except ``true``/``false``; a profile parses the rest
+    (the tree profile reads ``class_labels=0,1,2`` as a list).
 
     Args:
-        text (str): The option value, or None.
+        pairs (list): ``KEY=VALUE`` strings, or None.
 
     Returns:
-        list|None: The labels.
+        dict: The options.
+
+    Raises:
+        SystemExit: On an item without ``=``.
     """
-    return None if not text else [int(v) for v in text.split(",")]
+    out = {}
+    for item in pairs or []:
+        if "=" not in item:
+            raise SystemExit(f"cpncheck: -O expects KEY=VALUE, got {item!r}")
+        key, value = item.split("=", 1)
+        lowered = value.strip().lower()
+        out[key.strip()] = ({"true": True, "false": False}.get(lowered,
+                                                                value.strip()))
+    return out
 
 
 # Function to run the check command.
@@ -54,7 +68,7 @@ def _cmd_check(args):
     if len(ids) != len(set(ids)):
         dup = sorted({i for i in ids if ids.count(i) > 1})
         raise SystemExit(f"duplicate property ids: {', '.join(dup)}")
-    result = check_cpn(args.net, class_labels=_labels(args.labels),
+    result = check_cpn(args.net, options=_options(args.option),
                        max_nodes=args.max_nodes, verbose=args.verbose,
                        reduction=args.reduction, properties=props or None)
     if args.json:
@@ -113,7 +127,7 @@ def _cmd_askctl(args):
     """
     from .checker import CPNModelChecker
 
-    mc = CPNModelChecker(args.net, class_labels=_labels(args.labels))
+    mc = CPNModelChecker(args.net, options=_options(args.option))
     path = mc.export_askctl(args.out)
     print(path)
     return 0
@@ -156,7 +170,7 @@ def _cmd_oracle(args):
               file=sys.stderr)
         return 2
     report = compare_with_oracle(args.net, oracle=oracle,
-                                 class_labels=_labels(args.labels))
+                                 options=_options(args.option))
     bad = 0
     for key, ours, theirs, agree in report["rows"]:
         if not agree:
@@ -182,7 +196,9 @@ def build_parser():
 
     p = sub.add_parser("check", help="verify a .cpn file")
     p.add_argument("net")
-    p.add_argument("--labels", help="label domain, e.g. 0,1,2")
+    p.add_argument("-O", "--option", action="append", metavar="KEY=VALUE",
+                   help="a setting for the net's profile, e.g. "
+                        "class_labels=0,1,2; repeatable")
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     p.add_argument("--reduction", choices=["stubborn"], default=None,
                    help="decide the properties on stubborn-set reduced graphs")
@@ -202,7 +218,7 @@ def build_parser():
     p = sub.add_parser("askctl", help="write the ASK-CTL script for CPN Tools")
     p.add_argument("net")
     p.add_argument("-o", "--out", default="askctl.sml")
-    p.add_argument("--labels")
+    p.add_argument("-O", "--option", action="append", metavar="KEY=VALUE")
     p.set_defaults(func=_cmd_askctl)
 
     p = sub.add_parser("mutants", help="derive one mutant per property")
@@ -213,7 +229,7 @@ def build_parser():
 
     p = sub.add_parser("oracle", help="cross-check against CPN Tools")
     p.add_argument("net")
-    p.add_argument("--labels")
+    p.add_argument("-O", "--option", action="append", metavar="KEY=VALUE")
     p.set_defaults(func=_cmd_oracle)
     return parser
 

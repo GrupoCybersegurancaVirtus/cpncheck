@@ -64,10 +64,14 @@ phase 2**: they are what turns the samples into a measured result.
   answer SML prints over several lines, nor all answers after one that fails.
 * CPN Tools is not needed to use CPNCheck; a test runs the checker with the
   oracle module blocked.
-* The tree profile and its mutation operators move to pyruleanalyzer and are
-  registered as a plugin (entry point `cpncheck.profiles`).
-* `class_labels`, `feature_names`, `classifier`, `use_final` and `--labels`
-  stop being arguments of the generic checker; they become profile options.
+* **Done:** the tree profile, its mutation operators, its tests and the
+  walkthrough moved to pyruleanalyzer, which publishes the profile as a plugin
+  (entry point `cpncheck.profiles`; one that fails to load is a warning). The
+  generic checker no longer takes `class_labels`, `feature_names`,
+  `classifier` or `use_final`: a profile gets `options` (`-O key=value` on the
+  command line) and conformance a `reference`. CPNCheck's own tests run with
+  no plugin, so they show what a standalone install does; a verdict the
+  profile's catalog does not describe is now reported instead of dropped.
 * **Done:** user properties without Python (`cpncheck/query.py`): a property
   file (`--props`) or `--prop`, with `dead`, `enabled`, `marked`, `empty`,
   `tokens(P) op k`, `enabled_count(T) op k`, `has(P, v)` over CPN ML values,
@@ -76,7 +80,7 @@ phase 2**: they are what turns the samples into a measured result.
   on DiningPhilosophers and SimpleProtocol_OG every one agrees with CPN Tools.
   A bad property or an unsupported net is one line on stderr (exit 2), not a
   traceback.
-* The generated ASK-CTL script stops saying "pyRuleAnalyzer".
+* **Done:** the generated ASK-CTL script says CPNCheck (`CPNCHECK_REPORT`).
 
 ## Phase 3 -- more of CPN ML (the sample-blocking items: done)
 
