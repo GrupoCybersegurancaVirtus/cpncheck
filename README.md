@@ -229,9 +229,16 @@ index ranges and the products, records, subsets and aliases built from them. A
 free variable whose colour set is infinite makes the net unexplorable and is
 refused by name, never quietly ignored.
 
-Still missing: timed nets, fusion sets beyond port/socket fusion, and
-user-declared datatypes. Anything outside the fragment raises `UnsupportedNet`
-rather than being mis-read — a wrong reading of a guard is a wrong verdict.
+Still missing: timed nets, code segments, priorities, synchronous channels,
+non-pattern input arc expressions, multisets inside `if`/`case`, `index` and
+enumeration values, and user-declared datatypes. Anything outside the fragment
+raises `UnsupportedNet` rather than being mis-read — a wrong reading of a guard
+is a wrong verdict. Fusion sets, double arcs and several prime pages are read.
+
+How far this reaches is measured on the example models CPN Tools ships with:
+`python examples/cpntools_samples.py` (add `--oracle` to compare with CPN
+Tools). The plan to make CPNCheck check any net CPN Tools can analyse is in
+[ROADMAP.md](ROADMAP.md).
 
 ## Status
 

@@ -238,6 +238,74 @@ class ColouredNet:
         except MLError as exc:
             raise UnsupportedNet(f"output arc {text.strip()!r}: {exc}")
 
+    # Method to refuse the constructs whose semantics is not implemented.
+    def _refuse_unsupported(self):
+        """Raise on anything that would change the state space if ignored.
+
+        Each of these is something CPN Tools takes into account when it builds
+        the occurrence graph; skipping it would check a different net from the
+        one on screen, so the net is refused by name instead.
+
+        Raises:
+            UnsupportedNet: For timed colour sets, transition time
+                inscriptions, code segments, priorities other than the default
+                and synchronous channels.
+        """
+        timed = sorted(name for name, cs in self.declarations.colsets.items()
+                       if cs.timed)
+        if timed:
+            raise UnsupportedNet(
+                f"timed nets are not supported (timed colour set(s): "
+                f"{', '.join(timed[:3])})")
+        for page in self.net.page_by_id.values():
+            for tr in page["transitions"].values():
+                where = f"{page['name']}/{tr['name']}"
+                if tr.get("time"):
+                    raise UnsupportedNet(f"{where}: time inscription "
+                                         f"{tr['time']!r} (timed nets are not "
+                                         "supported)")
+                if tr.get("code"):
+                    raise UnsupportedNet(f"{where}: code segments are not "
+                                         "supported")
+                if tr.get("priority") and tr["priority"] != "P_NORMAL":
+                    raise UnsupportedNet(f"{where}: transition priority "
+                                         f"{tr['priority']!r} is not supported")
+                if tr.get("channel"):
+                    raise UnsupportedNet(f"{where}: synchronous channels are "
+                                         "not supported")
+
+    # Method to map every fused place to the flat place of its fusion set.
+    def _fusion_groups(self) -> Dict[str, str]:
+        """Place id -> the global id shared by its fusion set.
+
+        All places of a fusion set are one place, wherever they are drawn and
+        however many times their page is instantiated. Members must agree on
+        the colour set and the initial marking; a disagreement is refused
+        rather than resolved by picking one.
+
+        Returns:
+            dict: ``{place id: "fusion:<set name>"}``.
+
+        Raises:
+            UnsupportedNet: When the members of a set disagree.
+        """
+        out: Dict[str, str] = {}
+        for name, members in self.net.fusion_sets().items():
+            entries = [pl for page in self.net.page_by_id.values()
+                       for pid, pl in page["places"].items() if pid in members]
+            marks = {" ".join((pl.get("initmark") or "").split())
+                     for pl in entries}
+            types = {pl.get("type") for pl in entries}
+            if len(marks) > 1:
+                raise UnsupportedNet(f"fusion set {name!r}: its places have "
+                                     "different initial markings")
+            if len(types) > 1:
+                raise UnsupportedNet(f"fusion set {name!r}: its places have "
+                                     "different colour sets")
+            for pid in members:
+                out[pid] = f"fusion:{name}"
+        return out
+
     # Method to expand the page hierarchy into flat places and transitions.
     def _flatten(self):
         """Fuse port places with their sockets and compile every transition.
@@ -248,11 +316,18 @@ class ColouredNet:
         """
         places: Dict[str, Dict[str, Any]] = collections.OrderedDict()
         trans: List[Dict[str, Any]] = []
+        self._refuse_unsupported()
+        fusion_of = self._fusion_groups()
 
         def expand(page, prefix, fused):
             pid_of = {}
             for lid, pl in page["places"].items():
-                gid = fused.get(lid) or f"{prefix}/{pl['name']}"
+                if lid in fused and lid in fusion_of:
+                    raise UnsupportedNet(
+                        f"{page['name']}/{pl['name']} is both a port and a member "
+                        f"of fusion set {pl['fusion']!r}")
+                gid = (fused.get(lid) or fusion_of.get(lid)
+                       or f"{prefix}/{pl['name']}")
                 pid_of[lid] = gid
                 if gid not in places:
                     places[gid] = {"gid": gid, "name": pl["name"],
@@ -268,8 +343,17 @@ class ColouredNet:
                 for a in page["arcs"]:
                     if a["trans"] != tid:
                         continue
-                    (ins if a["orient"] == "PtoT" else outs).append(
-                        (pid_of[a["place"]], a["expr"]))
+                    arc = (pid_of[a["place"]], a["expr"])
+                    # A double arc is an input and an output arc with the
+                    # same inscription: the token is taken and put back.
+                    if a["orient"] in ("PtoT", "BOTHDIR"):
+                        ins.append(arc)
+                    if a["orient"] in ("TtoP", "BOTHDIR"):
+                        outs.append(arc)
+                    if a["orient"] not in ("PtoT", "TtoP", "BOTHDIR"):
+                        raise UnsupportedNet(
+                            f"{page['name']}/{tr['name']}: arc orientation "
+                            f"{a['orient']!r} is not supported")
                 trans.append({"gid": f"{prefix}/{tr['name']}", "name": tr["name"],
                               "page": page["name"], "guard_text": tr["guard"],
                               "in_raw": ins, "out_raw": outs})
@@ -283,7 +367,14 @@ class ColouredNet:
                     sub_fused[port] = pid_of[sock]
                 expand(sub, f"{prefix}/{tr['name']}", sub_fused)
 
-        expand(self.top, self.top["name"], {})
+        # Every prime page instance is part of the model. A page that is
+        # instantiated twice at the top gets a distinct prefix per instance.
+        seen: Dict[str, int] = collections.Counter()
+        for page in self.net.prime_pages():
+            seen[page["name"]] += 1
+            prefix = page["name"] if seen[page["name"]] == 1 else \
+                f"{page['name']}#{seen[page['name']]}"
+            expand(page, prefix, {})
         self.places = list(places.values())
         index = {p["gid"]: i for i, p in enumerate(self.places)}
         for t in trans:
