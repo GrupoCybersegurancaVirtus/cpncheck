@@ -68,7 +68,14 @@ phase 2**: they are what turns the samples into a measured result.
   registered as a plugin (entry point `cpncheck.profiles`).
 * `class_labels`, `feature_names`, `classifier`, `use_final` and `--labels`
   stop being arguments of the generic checker; they become profile options.
-* User properties without Python: a query file or a CLI option.
+* **Done:** user properties without Python (`cpncheck/query.py`): a property
+  file (`--props`) or `--prop`, with `dead`, `enabled`, `marked`, `empty`,
+  `tokens(P) op k`, `enabled_count(T) op k`, `has(P, v)` over CPN ML values,
+  `! & | ->`, `AG AF EF EG`, `E[U]`, `A[U]`. They are requirements (PASS/FAIL)
+  beside the profile's facts, go through the reduction, and render to ASK-CTL;
+  on DiningPhilosophers and SimpleProtocol_OG every one agrees with CPN Tools.
+  A bad property or an unsupported net is one line on stderr (exit 2), not a
+  traceback.
 * The generated ASK-CTL script stops saying "pyRuleAnalyzer".
 
 ## Phase 3 -- more of CPN ML (the sample-blocking items: done)

@@ -37,6 +37,10 @@ __all__ = [
     "TokensIn",
     "Enabled",
     "EnabledCount",
+    "TokenCount",
+    "EnabledTally",
+    "Holds",
+    "COMPARISONS",
     "Not",
     "And",
     "Or",
@@ -726,6 +730,272 @@ class Enabled(Formula):
         return f"EN({self.selector!r})"
 
 
+#: Comparison operators of the counting propositions, CPN ML spelling.
+COMPARISONS: Dict[str, Callable[[int, int], bool]] = {
+    "<": lambda a, b: a < b,
+    "<=": lambda a, b: a <= b,
+    "=": lambda a, b: a == b,
+    ">=": lambda a, b: a >= b,
+    ">": lambda a, b: a > b,
+    "<>": lambda a, b: a != b,
+}
+
+
+# Class comparing the number of tokens in some places with a constant.
+class TokenCount(Formula):
+    """``tokens(P) op k``: the tokens of the selected places, added up.
+
+    Attributes:
+        selector (Selector): The places.
+        op (str): One of :data:`COMPARISONS`.
+        limit (int): The constant.
+    """
+
+    # Method to build the proposition.
+    def __init__(self, selector, op: str, limit: int, note: Optional[str] = None):
+        """Create the proposition.
+
+        Args:
+            selector (Selector): The places.
+            op (str): The comparison.
+            limit (int): The constant.
+            note (str, optional): Phrasing for counterexamples.
+
+        Raises:
+            ValueError: For an unknown comparison.
+        """
+        if op not in COMPARISONS:
+            raise ValueError(f"unknown comparison {op!r}")
+        self.selector = selector
+        self.op = op
+        self.limit = int(limit)
+        self.note = note
+
+    # Method to count the tokens in one marking.
+    def count(self, ctx, node: int) -> int:
+        """Tokens of the selected places in a marking.
+
+        Args:
+            ctx (Context): The evaluation context.
+            node (int): The marking.
+
+        Returns:
+            int: The total.
+        """
+        marking = ctx.ss.markings[node]
+        return sum(len(marking[p]) for p in ctx.select(self.selector))
+
+    # Method to compute the satisfaction set.
+    def eval(self, ctx):
+        """Markings where the comparison holds.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            frozenset: The satisfaction set.
+        """
+        test = COMPARISONS[self.op]
+        return frozenset(v for v in ctx.all if test(self.count(ctx, v),
+                                                     self.limit))
+
+    # Method to describe the formula in a counterexample.
+    def describe(self, ctx):
+        """Name the comparison.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            str: The description.
+        """
+        return (self.note or f"tokens({self.selector.describe(ctx.net)}) "
+                f"{self.op} {self.limit}")
+
+    # Method to say why one node violates the formula.
+    def at_fail(self, ctx, node):
+        """Give the count found.
+
+        Args:
+            ctx (Context): The evaluation context.
+            node (int): The violating node.
+
+        Returns:
+            str: The reason.
+        """
+        return (f"{self.describe(ctx)} does not hold: there are "
+                f"{self.count(ctx, node)}")
+
+    # Method to render the formula.
+    def __str__(self):
+        """Return the formula text.
+
+        Returns:
+            str: ``tokens(...) op k``.
+        """
+        return f"tokens({self.selector!r}) {self.op} {self.limit}"
+
+
+# Class comparing the number of enabled binding elements with a constant.
+class EnabledTally(Formula):
+    """``enabled_count(T) op k``: enabled binding elements of the transitions.
+
+    Attributes:
+        selector (Selector): The transitions.
+        op (str): One of :data:`COMPARISONS`.
+        limit (int): The constant.
+    """
+
+    # Method to build the proposition.
+    def __init__(self, selector, op: str, limit: int, note: Optional[str] = None):
+        """Create the proposition.
+
+        Args:
+            selector (Selector): The transitions.
+            op (str): The comparison.
+            limit (int): The constant.
+            note (str, optional): Phrasing for counterexamples.
+
+        Raises:
+            ValueError: For an unknown comparison.
+        """
+        if op not in COMPARISONS:
+            raise ValueError(f"unknown comparison {op!r}")
+        self.selector = selector
+        self.op = op
+        self.limit = int(limit)
+        self.note = note
+
+    # Method to compute the satisfaction set.
+    def eval(self, ctx):
+        """Markings where the comparison holds.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            frozenset: The satisfaction set.
+        """
+        group = set(ctx.select(self.selector))
+        test = COMPARISONS[self.op]
+        return frozenset(v for v in ctx.all
+                         if test(len(ctx.enabled_at(v, group)), self.limit))
+
+    # Method to describe the formula in a counterexample.
+    def describe(self, ctx):
+        """Name the comparison.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            str: The description.
+        """
+        return (self.note or f"enabled_count({self.selector.describe(ctx.net)})"
+                f" {self.op} {self.limit}")
+
+    # Method to say why one node violates the formula.
+    def at_fail(self, ctx, node):
+        """Give the count found.
+
+        Args:
+            ctx (Context): The evaluation context.
+            node (int): The violating node.
+
+        Returns:
+            str: The reason.
+        """
+        group = set(ctx.select(self.selector))
+        return (f"{self.describe(ctx)} does not hold: "
+                f"{len(ctx.enabled_at(node, group))} enabled")
+
+    # Method to render the formula.
+    def __str__(self):
+        """Return the formula text.
+
+        Returns:
+            str: ``enabled_count(...) op k``.
+        """
+        return f"enabled_count({self.selector!r}) {self.op} {self.limit}"
+
+
+# Class holding of the markings where some place holds a given token.
+class Holds(Formula):
+    """``has(P, v)``: one of the selected places holds a token equal to ``v``.
+
+    Attributes:
+        selector (Selector): The places.
+        value: The token, as a Python value.
+        ml_text (str): The value as the user wrote it in CPN ML, which is what
+            the ASK-CTL rendering hands back to CPN Tools.
+    """
+
+    # Method to build the proposition.
+    def __init__(self, selector, value, ml_text: str, note: Optional[str] = None):
+        """Create the proposition.
+
+        Args:
+            selector (Selector): The places.
+            value: The token value.
+            ml_text (str): Its CPN ML source.
+            note (str, optional): Phrasing for counterexamples.
+        """
+        self.selector = selector
+        self.value = value
+        self.ml_text = ml_text
+        self.note = note
+
+    # Method to compute the satisfaction set.
+    def eval(self, ctx):
+        """Markings where a selected place holds the token.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            frozenset: The satisfaction set.
+        """
+        places = ctx.select(self.selector)
+        value = self.value
+        return frozenset(v for v in ctx.all
+                         if any(value in ctx.ss.markings[v][p] for p in places))
+
+    # Method to describe the formula in a counterexample.
+    def describe(self, ctx):
+        """Name the token and the places.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            str: The description.
+        """
+        return (self.note or
+                f"has({self.selector.describe(ctx.net)}, {self.ml_text})")
+
+    # Method to say why one node violates the formula.
+    def at_fail(self, ctx, node):
+        """Report the token missing.
+
+        Args:
+            ctx (Context): The evaluation context.
+            node (int): The violating node.
+
+        Returns:
+            str: The reason.
+        """
+        return f"{self.describe(ctx)} does not hold"
+
+    # Method to render the formula.
+    def __str__(self):
+        """Return the formula text.
+
+        Returns:
+            str: ``has(..., v)``.
+        """
+        return f"has({self.selector!r}, {self.ml_text})"
+
+
 # ---------------------------------------------------------------------------
 # Boolean connectives
 # ---------------------------------------------------------------------------
@@ -756,6 +1026,31 @@ class Not(Formula):
             frozenset: The satisfaction set.
         """
         return ctx.all - ctx.sat(self.operand)
+
+    # Method to describe the negation in a counterexample.
+    def describe(self, ctx):
+        """``!(...)`` over the operand's own description.
+
+        Args:
+            ctx (Context): The evaluation context.
+
+        Returns:
+            str: The description.
+        """
+        return self.note or f"!({self.operand.describe(ctx)})"
+
+    # Method to say why one node violates the negation.
+    def at_fail(self, ctx, node):
+        """A negation fails where its operand holds.
+
+        Args:
+            ctx (Context): The evaluation context.
+            node (int): The violating node.
+
+        Returns:
+            str: The reason.
+        """
+        return self.note or f"{self.operand.describe(ctx)} holds"
 
     # Method to produce the evidence for a failure.
     def counterexample(self, ctx):

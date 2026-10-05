@@ -53,9 +53,9 @@ import time
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from .coloured import ColouredNet
-from .formula import (AF, AG, EF, AllMarked, And, Context, Dead, Enabled,
-                      EnabledCount, ForEach, Formula, Marked, MaxTokens, Not,
-                      Or, TokensIn)
+from .formula import (AF, AG, COMPARISONS, EF, AllMarked, And, Context, Dead,
+                      Enabled, EnabledCount, EnabledTally, ForEach, Formula,
+                      Holds, Marked, MaxTokens, Not, Or, TokenCount, TokensIn)
 from .selectors import Explicit
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
@@ -75,9 +75,10 @@ KINDS = ("deadlock", "safety", "stutter", "full")
 #: Markings whose enabled binding elements are remembered across graphs.
 _CACHE_LIMIT = 100_000
 
-_ATOMS = (Marked, AllMarked, MaxTokens, TokensIn, Enabled, EnabledCount, Dead)
-_PLACE_ATOMS = (Marked, AllMarked, MaxTokens, TokensIn)
-_TRANSITION_ATOMS = (Enabled, EnabledCount)
+_ATOMS = (Marked, AllMarked, MaxTokens, TokensIn, TokenCount, Holds, Enabled,
+          EnabledCount, EnabledTally, Dead)
+_PLACE_ATOMS = (Marked, AllMarked, MaxTokens, TokensIn, TokenCount, Holds)
+_TRANSITION_ATOMS = (Enabled, EnabledCount, EnabledTally)
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +368,14 @@ class _Atoms:
             return any(counts.get(t, 0) for t in sel(f.selector))
         if isinstance(f, EnabledCount):
             return sum(counts.get(t, 0) for t in sel(f.selector)) <= f.limit
+        if isinstance(f, TokenCount):
+            total = sum(len(m[p]) for p in sel(f.selector))
+            return COMPARISONS[f.op](total, f.limit)
+        if isinstance(f, Holds):
+            return any(f.value in m[p] for p in sel(f.selector))
+        if isinstance(f, EnabledTally):
+            total = sum(counts.get(t, 0) for t in sel(f.selector))
+            return COMPARISONS[f.op](total, f.limit)
         if isinstance(f, Dead):
             return not counts
         if isinstance(f, Not):
@@ -458,6 +467,15 @@ class _Atoms:
                 return frozenset(out)
             places = set().union(*[dep.pre[t] for t in group]) if group else set()
             return union(places, dep.takers)
+        if isinstance(f, (TokenCount, Holds)):
+            # Either direction: any transition adding to or taking from the
+            # places can change a count or a token's presence.
+            places = sel(f.selector)
+            return union(places, dep.givers) | union(places, dep.takers)
+        if isinstance(f, EnabledTally):
+            group = sel(f.selector)
+            places = set().union(*[dep.pre[t] for t in group]) if group else set()
+            return union(places, dep.givers) | union(places, dep.takers)
         if isinstance(f, Dead):
             return None
         if isinstance(f, Not):

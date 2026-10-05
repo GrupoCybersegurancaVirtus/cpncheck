@@ -42,9 +42,21 @@ def _cmd_check(args):
     """
     from .checker import check_cpn
 
+    from .query import load_properties, parse_properties
+
+    props = []
+    for path in args.props or []:
+        props.extend(load_properties(path))
+    for text in args.prop or []:
+        props.extend(parse_properties(text, first=len(props) + 1))
+    # Automatic ids must not collide when several sources are mixed.
+    ids = [p.id for p in props]
+    if len(ids) != len(set(ids)):
+        dup = sorted({i for i in ids if ids.count(i) > 1})
+        raise SystemExit(f"duplicate property ids: {', '.join(dup)}")
     result = check_cpn(args.net, class_labels=_labels(args.labels),
                        max_nodes=args.max_nodes, verbose=args.verbose,
-                       reduction=args.reduction)
+                       reduction=args.reduction, properties=props or None)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(result.to_dict(), fh, indent=2)
@@ -174,6 +186,12 @@ def build_parser():
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     p.add_argument("--reduction", choices=["stubborn"], default=None,
                    help="decide the properties on stubborn-set reduced graphs")
+    p.add_argument("--props", action="append", metavar="FILE",
+                   help="a file of properties to check (see cpncheck.query); "
+                        "repeatable")
+    p.add_argument("--prop", action="append", metavar="FORMULA",
+                   help='one property, e.g. \'AG !(has(Eat, ph(1)) & '
+                        'has(Eat, ph(2)))\'; repeatable')
     p.add_argument("--json", help="also write the verdicts as JSON")
     p.add_argument("--latex", action="store_true", help="print a LaTeX table")
     p.add_argument("--trace", action="store_true",
@@ -207,11 +225,24 @@ def main(argv=None):
     Args:
         argv (list, optional): Arguments; ``sys.argv[1:]`` when omitted.
 
+    A property that does not parse and a net outside the supported fragment
+    are the user's to fix, so they are reported as one message, not as a
+    Python traceback.
+
     Returns:
-        int: Process exit status.
+        int: Process exit status (2 for those two errors).
     """
+    from .coloured import UnsupportedNet
+    from .query import QueryError
+
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except QueryError as exc:
+        print(f"cpncheck: property error: {exc}", file=sys.stderr)
+    except UnsupportedNet as exc:
+        print(f"cpncheck: the net is not supported: {exc}", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

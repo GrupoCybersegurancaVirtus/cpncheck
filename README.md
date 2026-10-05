@@ -66,7 +66,32 @@ cpncheck check SimpleProtocol.cpn
 | R5 | All transitions live | `forall t: AG EF EN(t)` |
 
 They are facts, printed YES/NO, and never fail a check -- a protocol meant to
-stop has dead markings and is not wrong for it. Below them come the integer
+stop has dead markings and is not wrong for it.
+
+### Your own properties, without Python
+
+Requirements go in a file (or on the command line) and fail the check when
+violated, with a counterexample:
+
+```
+# dining.props
+ME "neighbours never eat together": AG !(has(Eat, ph(1)) & has(Eat, ph(2)))
+NOEAT "philosopher 1 never eats":   AG !has(Eat, ph(1))
+CS: AG tokens("Unused Chopsticks") <= 5
+```
+
+```bash
+cpncheck check DiningPhilosophers.cpn --props dining.props --prop "AF has(Eat, ph(3))"
+```
+
+Propositions: `dead`, `enabled(T)`, `marked(P)`, `empty(P)`,
+`tokens(P) op k`, `enabled_count(T) op k`, `has(P, v)` with `v` any CPN ML
+value; connectives `! & | ->`; operators `AG AF EF EG`, `E[f U g]`,
+`A[f U g]`. Names are bare or quoted and refer to a full path, a page's
+element or every element of that name. The full grammar is in
+[`cpncheck/query.py`](cpncheck/query.py); from Python, pass
+`properties=` to `check_cpn` or `CPNModelChecker`. Every user property on two
+CPN Tools samples is checked against CPN Tools' own ASK-CTL by the tests. Below them come the integer
 bounds of every place and the dead and live transition instances. Every figure
 is compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
 `UpperInteger`, `LowerInteger`) by the oracle tests.

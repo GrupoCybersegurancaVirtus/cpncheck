@@ -388,7 +388,8 @@ def compare_state_space(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
 
 # Function to compare the model checker with CPN Tools on one net.
 def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
-                        class_labels=None, timeout: int = 1800) -> Dict[str, object]:
+                        class_labels=None, timeout: int = 1800,
+                        properties=None) -> Dict[str, object]:
     """Run both engines on a net and compare every value.
 
     Args:
@@ -396,6 +397,7 @@ def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
         oracle (CPNToolsOracle, optional): The oracle; created when omitted.
         class_labels (list, optional): Label domain for A6.
         timeout (int): Seconds allowed for CPN Tools.
+        properties (optional): User properties, compared too.
 
     Returns:
         dict: ``{"net", "rows": [(key, pyra, cpntools, agree)], "agree",
@@ -404,7 +406,8 @@ def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
     from .checker import CPNModelChecker
 
     oracle = oracle or CPNToolsOracle()
-    checker = CPNModelChecker(cpn_path, class_labels=class_labels)
+    checker = CPNModelChecker(cpn_path, class_labels=class_labels,
+                              properties=properties)
     result = checker.check()
     decl, queries = checker.ml_program()
     answer = oracle.run(cpn_path, decl, queries, timeout=timeout)

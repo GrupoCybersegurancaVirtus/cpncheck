@@ -205,6 +205,22 @@ class MLProgram:
                      for p in places]
             return ('NF("in domain", fn n => ' + " andalso ".join(parts) + ")")
 
+        if isinstance(phi, F.TokenCount):
+            places = ctx.select(phi.selector)
+            total = " + ".join(f"{self.mark(p)} n" for p in places) or "0"
+            return (f'NF("tokens", fn n => ({total}) {phi.op} {phi.limit})')
+
+        if isinstance(phi, F.Holds):
+            places = ctx.select(phi.selector)
+            parts = " orelse ".join(f"cf ({phi.ml_text}, {self.multiset(p)}) > 0"
+                                    for p in places) or "false"
+            return f'NF("has", fn n => {parts})'
+
+        if isinstance(phi, F.EnabledTally):
+            name = self.group(ctx.select(phi.selector))
+            return (f'NF("enabled count", fn n => enCount {name} n '
+                    f'{phi.op} {phi.limit})')
+
         if isinstance(phi, F.Enabled):
             name = self.group(ctx.select(phi.selector))
             return f'NF("enabled", fn n => enCount {name} n > 0)'

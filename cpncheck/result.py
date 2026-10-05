@@ -242,6 +242,7 @@ class ModelCheckResult:
                      f"{self.tested} tested   time: {self.elapsed:.2f}s")
         lines.append("  semantics        : CTL over the occurrence graph, dead "
                      "markings with a self-loop")
+        id_width = max([5] + [len(pid) + 1 for pid in self.properties])
         for method, title in METHODS.items():
             rows = [r for r in self.properties.values() if r.spec.method == method]
             if not rows:
@@ -250,7 +251,7 @@ class ModelCheckResult:
             lines.append(f"  {title}")
             lines.append("  " + "-" * 78)
             for r in rows:
-                row = f"  {r.id:<5}{r.spec.name:<29}"
+                row = f"  {r.id:<{id_width}}{r.spec.name:<29}"
                 if show_formula:
                     row += f"{r.spec.ctl:<41}"
                 row += r.status

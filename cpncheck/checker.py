@@ -75,7 +75,8 @@ class CPNModelChecker:
                  class_labels: Optional[Sequence[int]] = None,
                  max_nodes: int = DEFAULT_MAX_NODES,
                  profile: Optional[Profile] = None,
-                 prelude: Optional[Dict[str, Any]] = None):
+                 prelude: Optional[Dict[str, Any]] = None,
+                 properties=None):
         """Parse and flatten a ``.cpn`` file, then resolve its properties.
 
         Args:
@@ -91,9 +92,16 @@ class CPNModelChecker:
             prelude (dict, optional): Names added to the net's own ML
                 declarations, and winning over them. A net that declares its
                 functions in ML needs none of this.
+            properties (optional): The user's own requirements, checked
+                beside the profile's: a list of
+                :class:`~cpncheck.query.UserProperty`, of formula strings, or
+                one string holding a property file's text
+                (:mod:`cpncheck.query`).
 
         Raises:
             UnsupportedNet: When no registered profile recognises the net.
+            QueryError: When a user property does not parse, names something
+                the net does not have, or reuses a profile property's id.
         """
         self.path = path
         self.net = CPNNet(path)
@@ -109,13 +117,14 @@ class CPNModelChecker:
         self.max_nodes = int(max_nodes)
         self.labels, self.label_source = self.profile.label_domain(
             self.cnet, class_labels)
-        self.formulas = self.profile.ctl_formulas(
-            self.cnet, self.groups, self.labels)
+        self.formulas = collections.OrderedDict(self.profile.ctl_formulas(
+            self.cnet, self.groups, self.labels))
         self.scc_props = self.profile.scc_properties(self.cnet, self.groups)
         self.unavailable = dict(self.profile.unavailable(
             self.cnet, self.groups, self.labels))
-        self.catalog = getattr(self.profile, "catalog",
-                               collections.OrderedDict())
+        self.catalog = collections.OrderedDict(
+            getattr(self.profile, "catalog", collections.OrderedDict()))
+        self.user_properties = self._add_user_properties(properties)
         self.structure = (self.profile.structure(self.cnet)
                           if hasattr(self.profile, "structure") else None)
         self.input_places = tuple(self.profile.input_places(self.cnet))
@@ -124,6 +133,43 @@ class CPNModelChecker:
         self.own_sample = own[0] if own else None
         self.width = len(self.own_sample) if self.own_sample else 0
         self._dependency: Optional[Dependency] = None
+
+    # Method to parse the user's properties and add them to the catalog.
+    def _add_user_properties(self, properties) -> List[Any]:
+        """Resolve the user's properties against the net.
+
+        Args:
+            properties: See :meth:`__init__`.
+
+        Returns:
+            list: The :class:`~cpncheck.query.UserProperty` objects added.
+
+        Raises:
+            QueryError: On a property that cannot be read, or an id clash.
+        """
+        from .query import QueryError, UserProperty, parse_formula, \
+            parse_properties
+
+        if not properties:
+            return []
+        if isinstance(properties, str):
+            items = parse_properties(properties)
+        else:
+            items, counter = [], 1
+            for entry in properties:
+                if isinstance(entry, UserProperty):
+                    items.append(entry)
+                else:
+                    parsed = parse_properties(str(entry), first=counter)
+                    counter += len(parsed)
+                    items.extend(parsed)
+        for prop in items:
+            if prop.id in self.catalog:
+                raise QueryError(f"user property {prop.id!r} clashes with a "
+                                 f"{self.profile.name} property of that id")
+            self.formulas[prop.id] = parse_formula(prop.text, self.cnet)
+            self.catalog[prop.id] = prop.descriptor()
+        return items
 
     # Property listing the identifiers this checker will answer.
     @property
@@ -638,7 +684,8 @@ def check_cpn(path: str, samples=None, classifier=None,
               max_nodes: int = DEFAULT_MAX_NODES,
               verbose: bool = False, profile=None,
               prelude: Optional[Dict[str, Any]] = None,
-              reduction: Optional[str] = None) -> ModelCheckResult:
+              reduction: Optional[str] = None,
+              properties=None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -654,13 +701,15 @@ def check_cpn(path: str, samples=None, classifier=None,
         profile (Profile, optional): The profile to use.
         prelude (dict, optional): Names added to the net's ML declarations.
         reduction (str, optional): ``"stubborn"`` for partial-order reduction.
+        properties (optional): User properties (:mod:`cpncheck.query`).
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
     """
     checker = CPNModelChecker(path, feature_names=feature_names,
                               class_labels=class_labels, max_nodes=max_nodes,
-                              profile=profile, prelude=prelude)
+                              profile=profile, prelude=prelude,
+                              properties=properties)
     return checker.check(samples=samples, classifier=classifier,
                          use_final=use_final, test_samples=test_samples,
                          verbose=verbose, reduction=reduction)
