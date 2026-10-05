@@ -195,6 +195,38 @@ both fixture nets and all their mutants, every verdict equals the full graph's
 and every reduced counterexample replays (`tests/test_reduction.py`). CPN Tools
 has no such reduction, so `oracle` values are only produced without it.
 
+## State explosion: the sweep-line method
+
+```bash
+cpncheck check model.cpn --reduction sweep --progress "tokens(Done) - tokens(Todo)"
+```
+
+```python
+result = check_cpn("model.cpn", properties="AG tokens(Buffer) <= 3",
+                   reduction="sweep", progress="tokens(Done) - tokens(Todo)")
+```
+
+The sweep-line method (`cpncheck/sweepline.py`) explores the markings in the
+order of a *progress measure* and forgets the ones it has left behind, so it
+needs memory for a moving window of the graph, not for all of it. The
+generalised form is used (Kristensen & Mailund 2002): an arc to a marking with
+less progress makes it *persistent* and starts a new sweep from it, so every
+reachable marking is explored with **any** measure. A bad measure costs time
+(markings explored again), never a wrong verdict.
+
+It decides properties of single markings: `AG ψ`, `EF χ` and `!EF χ` for
+state predicates, which may mention `dead` and `enabled`. Path properties
+(`AF`, `EG`, `AG EF`, home markings) get no verdict, with the reason, because
+the arcs are not kept; a violation is reported as the marking, not a path.
+
+A measure is a sum of `[k *] tokens(P)`, `[k *] sum(P)` (the integer values of
+the tokens), `[k *] clock` and constants, or a Python function of the marking.
+A timed net needs none: its clock never goes back. On a finite variant of CPN
+Tools' TimedResourceAlloc, 16 114 markings are explored with at most 2 293
+stored, in one sweep. `tests/test_sweepline.py` compares every verdict with
+the full graph on both fixture nets and all their mutants, under no measure, a
+token count and an arbitrary non-monotone function.
+
 ## Two claims, and how they are held up
 
 **Sensitivity.** `cpncheck mutants` derives one mutant per property — a small

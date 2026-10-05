@@ -178,7 +178,7 @@ on mutants, and against CPN Tools.
 | Technique | Status | Needs from the user | Preserves |
 |---|---|---|---|
 | Stubborn sets (`reduction="stubborn"`) | **done** | nothing | per property (deadlock / safety / stutter graphs) |
-| Sweep-line, generalised | planned, after phase 2 | a progress measure, or the clock of a timed net, or one found in the net | safety, reachability, dead markings |
+| Sweep-line, generalised (`reduction="sweep"`) | **done** | a progress measure (`--progress`), or nothing for a timed net (its clock) | `AG ψ`, `EF χ`, `!EF χ` of state predicates, dead markings; any measure is sound |
 | Equivalence | planned | the equivalence relation; consistency is tested, not proved | what the relation respects; verdicts marked conditional |
 | Symmetry | planned | the permutable colour sets; the soundness criteria are checked | properties invariant under the symmetry |
 

@@ -48,7 +48,7 @@ from .result import ModelCheckResult, PropertyResult
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
 #: Accepted values of the ``reduction`` argument of :meth:`CPNModelChecker.check`.
-REDUCTIONS = (None, "stubborn")
+REDUCTIONS = (None, "stubborn", "sweep")
 
 __all__ = ["CPNModelChecker", "check_cpn"]
 
@@ -408,6 +408,61 @@ class CPNModelChecker:
                       "dead": len(base.dead), "reduction": "stubborn"})
         return res, stats
 
+    # Method to evaluate the properties the sweep-line method preserves.
+    def _evaluate_sweep(self, sample=None, progress=None
+                        ) -> Tuple[Dict[str, PropertyResult], Dict[str, Any]]:
+        """Decide the properties of one input with the sweep-line method.
+
+        One exploration decides every property of single markings (``AG``,
+        ``EF``, ``not EF`` of state predicates, dead markings included); the
+        others get no verdict, with the reason (:mod:`cpncheck.sweepline`).
+
+        Args:
+            sample (optional): The input, or None for the file's own marking.
+            progress (optional): The progress measure (see
+                :func:`cpncheck.sweepline.parse_progress`).
+
+        Returns:
+            tuple: ``({id: PropertyResult}, statistics)``.
+        """
+        from .sweepline import SweepChecker, describe_marking, parse_progress
+
+        initial = None
+        if sample is not None:
+            initial = self.cnet.initial_marking(self.as_sample(sample),
+                                                places=self.input_places)
+        measure = parse_progress(progress, self.cnet)
+        sc = SweepChecker(self.cnet, measure, self.groups, initial=initial,
+                          max_nodes=self.max_nodes)
+        t0 = time.perf_counter()
+        verdicts = sc.decide_all(self.formulas)
+        elapsed = time.perf_counter() - t0
+        res: Dict[str, PropertyResult] = {}
+        for pid, (holds, witness, how) in verdicts.items():
+            cex = None
+            detail = how
+            if holds is False and witness is not None:
+                cex = Counterexample(
+                    "witness", input=sample,
+                    note=(f"a reachable marking violates it: "
+                          f"{describe_marking(self.cnet, witness)} (the "
+                          "sweep-line method keeps no path to it; check "
+                          "without reduction for one)"),
+                    data={"marking": describe_marking(self.cnet, witness),
+                          "reduction": "sweep"})
+                detail = str(cex)
+            res[pid] = PropertyResult(pid, holds, detail, elapsed,
+                                      spec=self.catalog.get(pid), cex=cex)
+        for pid, reason in self.unavailable.items():
+            res[pid] = PropertyResult(pid, None, reason,
+                                      spec=self.catalog.get(pid))
+        for pid in self.scc_props:
+            res[pid] = PropertyResult(
+                pid, None, "not preserved by the sweep-line method (a home "
+                "marking needs the arcs, which it does not keep)",
+                spec=self.catalog.get(pid))
+        return res, sc.stats()
+
     # Method to decide the home-marking property with the reduced graphs.
     def _home_reduced(self, rc: ReducedChecker, pid: str, sample,
                       plans: Dict[str, str]) -> PropertyResult:
@@ -466,7 +521,8 @@ class CPNModelChecker:
     def check(self, samples=None, reference=None, test_samples=None,
               max_nodes: Optional[int] = None, verbose: bool = False,
               reduction: Optional[str] = None,
-              options: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
+              options: Optional[Dict[str, Any]] = None,
+              progress=None) -> ModelCheckResult:
         """Verify every applicable property.
 
         Args:
@@ -487,6 +543,9 @@ class CPNModelChecker:
                 values are produced in that mode.
             options (dict, optional): Profile settings for this run, over
                 the ones given to the constructor.
+            progress (optional): For ``reduction="sweep"``: the progress
+                measure, as text (``"tokens(Done) - tokens(Todo)"``) or a
+                function of the marking; a timed net defaults to its clock.
 
         Returns:
             ModelCheckResult: Verdicts, statistics and the expected CPN Tools
@@ -513,6 +572,16 @@ class CPNModelChecker:
         for i, x in enumerate(xs):
             if verbose:
                 print(f"  [mc] input {i + 1}/{len(xs)}")
+            if reduction == "sweep":
+                part, rstats = self._evaluate_sweep(x, progress)
+                if not rstats["complete"]:
+                    warnings.append(f"the sweep stopped before exploring every "
+                                    f"marking (budget {self.max_nodes}): "
+                                    "properties not yet violated have no "
+                                    "verdict")
+                stats = stats or rstats
+                self._merge(merged, part)
+                continue
             if reduction == "stubborn":
                 part, rstats = self._evaluate_reduced(x)
                 if not rstats["complete"]:
@@ -685,7 +754,8 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
               prelude: Optional[Dict[str, Any]] = None,
               reduction: Optional[str] = None,
               properties=None,
-              options: Optional[Dict[str, Any]] = None) -> ModelCheckResult:
+              options: Optional[Dict[str, Any]] = None,
+              progress=None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -697,9 +767,11 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
         verbose (bool): Print progress.
         profile (Profile, optional): The profile to use.
         prelude (dict, optional): Names added to the net's ML declarations.
-        reduction (str, optional): ``"stubborn"`` for partial-order reduction.
+        reduction (str, optional): ``"stubborn"`` for partial-order
+            reduction, ``"sweep"`` for the sweep-line method.
         properties (optional): User properties (:mod:`cpncheck.query`).
         options (dict, optional): Profile settings.
+        progress (optional): The sweep-line progress measure.
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
@@ -709,4 +781,5 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
                               options=options)
     return checker.check(samples=samples, reference=reference,
                          test_samples=test_samples,
-                         verbose=verbose, reduction=reduction)
+                         verbose=verbose, reduction=reduction,
+                         progress=progress)

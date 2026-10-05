@@ -70,7 +70,8 @@ def _cmd_check(args):
         raise SystemExit(f"duplicate property ids: {', '.join(dup)}")
     result = check_cpn(args.net, options=_options(args.option),
                        max_nodes=args.max_nodes, verbose=args.verbose,
-                       reduction=args.reduction, properties=props or None)
+                       reduction=args.reduction, properties=props or None,
+                       progress=args.progress)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(result.to_dict(), fh, indent=2)
@@ -200,8 +201,13 @@ def build_parser():
                    help="a setting for the net's profile, e.g. "
                         "class_labels=0,1,2; repeatable")
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
-    p.add_argument("--reduction", choices=["stubborn"], default=None,
-                   help="decide the properties on stubborn-set reduced graphs")
+    p.add_argument("--reduction", choices=["stubborn", "sweep"], default=None,
+                   help="stubborn: decide the properties on stubborn-set "
+                        "reduced graphs; sweep: the sweep-line method "
+                        "(properties of single markings only)")
+    p.add_argument("--progress", metavar="MEASURE",
+                   help='sweep-line progress measure, e.g. "tokens(Done) - '
+                        'tokens(Todo)" or "clock" (the default of a timed net)')
     p.add_argument("--props", action="append", metavar="FILE",
                    help="a file of properties to check (see cpncheck.query); "
                         "repeatable")
@@ -250,12 +256,15 @@ def main(argv=None):
     """
     from .coloured import UnsupportedNet
     from .query import QueryError
+    from .sweepline import ProgressError
 
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
     except QueryError as exc:
         print(f"cpncheck: property error: {exc}", file=sys.stderr)
+    except ProgressError as exc:
+        print(f"cpncheck: progress measure: {exc}", file=sys.stderr)
     except UnsupportedNet as exc:
         print(f"cpncheck: the net is not supported: {exc}", file=sys.stderr)
     return 2

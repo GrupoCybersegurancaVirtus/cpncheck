@@ -223,7 +223,14 @@ class ModelCheckResult:
         lines.append(head)
         lines.append("=" * max(len(head), 76))
         st = self.stats
-        if st.get("reduction"):
+        if st.get("reduction") == "sweep":
+            lines.append(f"  reduction        : sweep-line, progress "
+                         f"{st.get('progress')}; {st.get('explored')} markings "
+                         f"explored in {st.get('sweeps')} sweep(s), at most "
+                         f"{st.get('peak_stored')} stored, {st.get('regress')} "
+                         f"regress arc(s), {st.get('dead')} dead marking(s)"
+                         f"{'' if st.get('complete', True) else ' (STOPPED EARLY)'}")
+        elif st.get("reduction"):
             per = ", ".join(f"{k} x{n}" for k, n in st.get("per_kind", {}).items())
             lines.append(f"  reduction        : stubborn sets; {st.get('graphs')} "
                          f"reduced graph(s) ({per}), {st.get('nodes_total')} "
