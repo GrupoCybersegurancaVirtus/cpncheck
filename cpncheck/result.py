@@ -9,7 +9,7 @@ Reports are plain text, JSON (:meth:`ModelCheckResult.to_dict`) and LaTeX
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .properties import METHODS, Property
 
@@ -264,9 +264,11 @@ class ModelCheckResult:
             lines.append(f"  {title}")
             lines.append("  " + "-" * 78)
             for r in rows:
-                row = f"  {r.id:<{id_width}}{r.spec.name:<29}"
+                # A long name or formula pushes the columns along rather
+                # than running into the next one.
+                row = f"  {r.id:<{id_width}}{r.spec.name:<28} "
                 if show_formula:
-                    row += f"{r.spec.ctl:<41}"
+                    row += f"{r.spec.ctl:<40} "
                 row += r.status
                 lines.append(row)
                 plan = st.get("plans", {}).get(r.id)
@@ -398,21 +400,29 @@ class ModelCheckResult:
 
 
 # Function to compare the verdicts of the initial and the refined model.
-def compare_results(initial: ModelCheckResult, final: ModelCheckResult) -> str:
-    """Side-by-side report of two runs; the acceptance test of a refinement.
+def compare_results(initial: ModelCheckResult, final: ModelCheckResult,
+                    names: Tuple[str, str] = ("initial", "refined")) -> str:
+    """Side-by-side report of two runs, e.g. a model before and after a change.
 
     Args:
-        initial (ModelCheckResult): Verdicts for the unrefined model.
-        final (ModelCheckResult): Verdicts for the refined model.
+        initial (ModelCheckResult): Verdicts for the first version.
+        final (ModelCheckResult): Verdicts for the second version.
+        names (tuple): What to call the two versions; the default suits the
+            acceptance test of a refinement.
 
     Returns:
         str: The comparison, listing every regression.
     """
+    first, second = names
+    refinement = tuple(names) == ("initial", "refined")
+    broken = "by the refinement" if refinement else f"in the {second} model"
+    kept = "the refinement" if refinement else f"the {second} model"
     ids = list(initial.properties)
     ids += [pid for pid in final.properties if pid not in initial.properties]
-    lines = ["Initial vs. refined model", "=" * 76,
-             f"  {'ID':<5}{'PROPERTY':<30}{'METHOD':<12}{'INITIAL':<9}"
-             f"{'REFINED':<9}RESULT", "  " + "-" * 74]
+    width = max(9, len(first) + 1, len(second) + 1)
+    lines = [f"{first.capitalize()} vs. {second} model", "=" * 76,
+             f"  {'ID':<5}{'PROPERTY':<30}{'METHOD':<12}{first.upper():<{width}}"
+             f"{second.upper():<{width}}RESULT", "  " + "-" * 74]
     regressions = []
     for pid in ids:
         a, b = initial.properties.get(pid), final.properties.get(pid)
@@ -427,13 +437,13 @@ def compare_results(initial: ModelCheckResult, final: ModelCheckResult) -> str:
         elif (a and a.holds is None) or (b and b.holds is None):
             verdict = "not compared"
         spec = (a or b).spec
-        lines.append(f"  {pid:<5}{spec.name:<30}{spec.method:<12}{sa:<9}{sb:<9}"
-                     f"{verdict}")
+        lines.append(f"  {pid:<5}{spec.name:<30}{spec.method:<12}{sa:<{width}}"
+                     f"{sb:<{width}}{verdict}")
     lines.append("")
     if regressions:
-        lines.append(f"  {len(regressions)} property(ies) broken by the refinement:")
+        lines.append(f"  {len(regressions)} property(ies) broken {broken}:")
         for pid, detail in regressions:
             lines.append(f"    {pid}: {detail}")
     else:
-        lines.append("  the refinement preserved every verified property")
+        lines.append(f"  {kept} preserved every verified property")
     return "\n".join(lines)

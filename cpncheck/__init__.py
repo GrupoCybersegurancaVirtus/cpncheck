@@ -12,18 +12,24 @@ answers against CPN Tools itself.
 
 Layers, bottom up:
 
-=========================  ====================================================
-:mod:`cpncheck.net`        parse the ``.cpn`` XML
-:mod:`cpncheck.coloured`   compile the CPN ML fragment; flatten; fire
-:mod:`cpncheck.statespace` occurrence graph, SCCs, home markings
-:mod:`cpncheck.reduction`  stubborn-set reduced graphs (partial-order reduction)
-:mod:`cpncheck.ctl`        CTL fixpoints over the occurrence graph
-:mod:`cpncheck.properties` the property catalog
-:mod:`cpncheck.result`     verdicts and reports (text, JSON, LaTeX)
-:mod:`cpncheck.checker`    the four techniques, and the public entry points
-:mod:`cpncheck.oracle`     run CPN Tools 4.0.1 headless and compare
-:mod:`cpncheck.mutation`   mutants: every property must be able to fail
-=========================  ====================================================
+============================  ====================================================
+:mod:`cpncheck.net`           parse the ``.cpn`` XML
+:mod:`cpncheck.coloured`      compile the CPN ML fragment; flatten; fire
+:mod:`cpncheck.statespace`    occurrence graph, SCCs, home markings
+:mod:`cpncheck.reduction`     stubborn-set reduced graphs (partial-order reduction)
+:mod:`cpncheck.sweepline`     the generalised sweep-line method
+:mod:`cpncheck.equivalence`   quotient graphs; time equivalence
+:mod:`cpncheck.symmetry`      symmetry reduction
+:mod:`cpncheck.query`         user properties written as text
+:mod:`cpncheck.ctl`           CTL fixpoints over the occurrence graph
+:mod:`cpncheck.properties`    the property catalog
+:mod:`cpncheck.result`        verdicts and reports (text, JSON, LaTeX)
+:mod:`cpncheck.checker`       the four techniques, and the public entry points
+:mod:`cpncheck.oracle`        run CPN Tools 4.0.1 headless and compare
+:mod:`cpncheck.mutation`      mutants: every property must be able to fail
+============================  ====================================================
+
+Examples, one feature per script: ``examples/`` in the repository.
 """
 
 from .checker import CPNModelChecker, check_cpn

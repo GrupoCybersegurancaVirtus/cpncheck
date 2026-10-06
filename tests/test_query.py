@@ -210,3 +210,17 @@ def test_user_properties_agree_with_cpntools(path, text):
     ids = {p.id for p in parse_properties(text)}
     compared = {key for key, *_ in report["rows"]}
     assert ids <= compared
+
+
+def test_automatic_ids_continue_across_a_mixed_list(tmp_path):
+    """A parsed property and a string in one list must not both become U1."""
+    path = _counter(tmp_path)
+    mixed = parse_properties("AG tokens(Counter) = 1") + ["EF has(Counter, 3)"]
+    result = check_cpn(path, properties=mixed)
+    assert result.properties["U1"].holds is True
+    assert result.properties["U2"].holds is True
+
+
+def test_a_repeated_user_id_is_named_as_such(tmp_path):
+    with pytest.raises(QueryError, match="two user properties"):
+        check_cpn(_counter(tmp_path), properties=["A: AG !dead", "A: EF dead"])

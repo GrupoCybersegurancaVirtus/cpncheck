@@ -149,8 +149,15 @@ def _cmd_mutants(args):
     from .mutation import make_mutants
 
     only = args.only.split(",") if args.only else None
-    for m in make_mutants(args.net, args.out_dir, names=only):
+    written = make_mutants(args.net, args.out_dir, names=only)
+    for m in written:
         print(f"{m['name']:<16} must fail {','.join(m['targets']):<12} {m['path']}")
+    if not written:
+        # Saying nothing would look like success.
+        print("no mutants written: the net's profile has no mutation operator "
+              "that applies to it" + (f" among {', '.join(only)}" if only else ""),
+              file=sys.stderr)
+        return 1
     return 0
 
 

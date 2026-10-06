@@ -1029,6 +1029,10 @@ class ReducedChecker:
         Returns:
             StateSpace: The graph.
         """
+        if not getattr(self.net, "reducible", True):
+            # A global clock or priorities: no reduced graph is sound, so
+            # every request, whatever its kind, gets the full graph.
+            kind, invariant, visible = "full", None, frozenset()
         if kind == "safety":
             key = ("safety", str(invariant), id(invariant))
         elif kind == "stutter":

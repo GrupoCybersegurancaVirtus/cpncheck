@@ -206,3 +206,43 @@ def test_the_reduction_gives_the_full_verdicts_on_fixtures(path):
     for r in reduced.properties.values():
         if r.cex is not None and r.cex.kind in ("finite", "lasso"):
             assert r.cex.replay(CPNModelChecker(path).cnet)
+
+
+def test_compare_results_names_the_versions():
+    good = check_cpn(GBDT, properties="P: AF dead")
+    bad = check_cpn(GBDT, properties="P: AG !dead")
+    text = compare_results(good, bad, names=("before", "after"))
+    assert text.startswith("Before vs. after model")
+    assert "BEFORE" in text and "AFTER" in text
+    assert "broken in the after model" in text
+    assert "refine" not in text
+    # The default keeps the wording of the refinement acceptance test.
+    assert "broken by the refinement" in compare_results(good, bad)
+
+
+def test_a_long_name_never_runs_into_the_formula():
+    from cpncheck.properties import Property
+    from cpncheck.result import ModelCheckResult, PropertyResult
+
+    spec = Property("P", "a catalog name much longer than its column",
+                    "AG !dead", "desired")
+    result = ModelCheckResult("x.cpn", "CPN",
+                              {"P": PropertyResult("P", True, "", spec=spec)},
+                              {})
+    row = next(line for line in result.report().splitlines()
+               if line.strip().startswith("P "))
+    assert "column AG !dead" in row
+
+
+def test_mutants_without_operators_say_so(tmp_path):
+    import subprocess
+    import sys
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    path = write_net(str(tmp_path / "c.cpn"), {"Top": {
+        "places": [("C", "C", "INT", "1`0", None)],
+        "trans": [("T", "T", "[n < 2]", None)],
+        "arcs": [("T", "C", "PtoT", "n"), ("T", "C", "TtoP", "n + 1")]}})
+    done = subprocess.run([sys.executable, "-m", "cpncheck.cli", "mutants", path,
+                           str(tmp_path / "m")], capture_output=True, text=True,
+                          cwd=root, env={**os.environ, "PYTHONPATH": root})
+    assert done.returncode == 1 and "no mutants written" in done.stderr

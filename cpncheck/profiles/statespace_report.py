@@ -130,7 +130,8 @@ class StateSpaceReportProfile(Profile):
             OrderedDict: ``property id -> Formula``.
         """
         out = collections.OrderedDict()
-        out["R1"] = AG(Not(Dead()).phrased("a live marking"))
+        # Unphrased: a violation then reads "dead holds after: ...".
+        out["R1"] = AG(Not(Dead()))
         out["R2"] = AF(Dead().phrased("termination"))
         if net.transitions:
             out["R4"] = ForEach("transitions", self._can_occur)

@@ -222,3 +222,25 @@ def test_timed_resource_allocation_is_contained_in_ours(tmp_path, bound):
                                        timeout=1200)
     assert report["contained"], report
     assert report["dead"][0] == report["dead"][1]
+
+
+def test_stubborn_reduction_builds_only_full_graphs_for_timed_nets(tmp_path):
+    """Every graph, including the one the home-marking test asks for."""
+    from cpncheck import check_cpn
+
+    path = write_net(str(tmp_path / "t.cpn"), **dict(_pipeline_kwargs()))
+    result = check_cpn(path, reduction="stubborn")
+    assert {plan.split(" ")[0] for plan in result.stats["plans"].values()} \
+        == {"full"}
+    assert set(result.stats["per_kind"]) == {"full"}
+
+
+# Function to give the write_net arguments of the timed pipeline.
+def _pipeline_kwargs():
+    return {"pages": {"Top": {
+        "places": [("P", "P", "INT", "1`7", None), ("Q", "Q", "INT", None, None),
+                   ("R", "R", "INT", None, None)],
+        "trans": [("T1", "T1", None, None), ("T2", "T2", None, None)],
+        "arcs": [("T1", "P", "PtoT", "x"), ("T1", "Q", "TtoP", "x @+5"),
+                 ("T2", "Q", "PtoT", "x"), ("T2", "R", "TtoP", "x")]}},
+        "variables": ("x",), "timed": ("INT",)}

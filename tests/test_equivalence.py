@@ -241,3 +241,9 @@ def test_symmetry_on_cpntools_samples(rel, spec, classes):
         pytest.skip("CPN Tools samples not found")
     decided, q = _agree(path, reduction="symmetry", symmetry=spec)
     assert decided > 0 and q.stats["classes"] == classes
+
+
+def test_counterexample_steps_show_index_values_as_written(tmp_path):
+    q = check_cpn(_philosophers(tmp_path), properties="AG tokens(Eat) <= 1")
+    steps = [s.detailed() for s in q.properties["U1"].cex.prefix]
+    assert steps and all("p = ph(" in s for s in steps), steps

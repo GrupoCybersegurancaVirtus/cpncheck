@@ -1,0 +1,36 @@
+# Properties of the dining philosophers (examples/nets/dining.cpn).
+#
+# One property per line:   [id] ["name"] [:] formula
+# The id and the name are optional; ids default to U1, U2, ...
+# A property continues on the next lines while brackets are open, or after a
+# trailing ":". "#" starts a comment.
+
+# Safety: the two neighbours of philosopher 1 never eat together with them.
+ME12 "philosophers 1 and 2 never eat together":
+    AG !(has(Eat, ph(1)) & has(Eat, ph(2)))
+ME15 "philosophers 1 and 5 never eat together":
+    AG !(has(Eat, ph(1)) & has(Eat, ph(5)))
+
+# Chopsticks are conserved: every chopstick is either unused or held by one
+# of the (at most two) eaters, two each.
+CHOP "no chopstick is lost": AG tokens("Unused Chopsticks") >= 1
+
+# Reachability and liveness.
+EAT1 "philosopher 1 can eat": EF has(Eat, ph(1))
+LIVE "philosopher 1 can always eat again": AG EF has(Eat, ph(1))
+NODL "no deadlock": AG !dead
+
+# Fairness is NOT guaranteed: philosopher 1 may wait forever while the others
+# eat. AF fails, and the counterexample is a cycle that avoids philosopher 1.
+FAIR "philosopher 1 eventually eats": AF has(Eat, ph(1))
+
+# Counting binding elements: at most three philosophers can start eating in
+# any marking (each needs two free chopsticks out of five).
+BIND "at most 5 ways to take chopsticks": AG enabled_count("Take Chopsticks") <= 5
+
+# Until: from the start, nobody puts chopsticks down before someone has eaten.
+ORDER "eating comes before putting down":
+    A[!enabled("Put Down Chopsticks") U marked(Eat)]
+
+# EG: there is a run where philosopher 3 never eats.
+STARVE3 "philosopher 3 can starve": EG !has(Eat, ph(3))

@@ -98,10 +98,12 @@ bounds of every place and the dead and live transition instances. Every figure
 is compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
 `UpperInteger`, `LowerInteger`) by the oracle tests.
 
-`python examples/walkthrough.py` runs all of it on the nets under `tests/nets`
-and prints what each layer produced, step by step — the XML, the compiled
-guards, the occurrence graph, one run marking by marking, the verdicts, the
-counterexamples and the mutants. See [examples/](examples/).
+**Examples.** [examples/](examples/) is a guided tour, one feature per
+script, on small nets shipped with them: the quickstart, the layers under
+`check_cpn`, the property language, counterexamples, timed nets, the four
+reductions, writing a profile with mutation operators and a conformance
+test, ASK-CTL and report formats, the CPN Tools oracle and the command line.
+`python examples/run_all.py` runs them all.
 
 ## Counterexamples
 

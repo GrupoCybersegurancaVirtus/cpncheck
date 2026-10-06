@@ -148,15 +148,19 @@ class CPNModelChecker:
         if isinstance(properties, str):
             items = parse_properties(properties)
         else:
-            items, counter = [], 1
+            items = []
             for entry in properties:
                 if isinstance(entry, UserProperty):
                     items.append(entry)
                 else:
-                    parsed = parse_properties(str(entry), first=counter)
-                    counter += len(parsed)
-                    items.extend(parsed)
+                    # Automatic ids continue after the entries before it.
+                    items.extend(parse_properties(str(entry),
+                                                  first=len(items) + 1))
+        seen = set()
         for prop in items:
+            if prop.id in seen:
+                raise QueryError(f"two user properties have the id {prop.id!r}")
+            seen.add(prop.id)
             if prop.id in self.catalog:
                 raise QueryError(f"user property {prop.id!r} clashes with a "
                                  f"{self.profile.name} property of that id")
@@ -546,7 +550,8 @@ class CPNModelChecker:
         spec = self.catalog.get(pid)
         terminating = rc.terminating()
         ss = rc.graph("deadlock" if terminating else "full")
-        plans[pid] = "deadlock" if terminating else "full"
+        plans[pid] = ("deadlock" if terminating and getattr(
+            self.cnet, "reducible", True) else "full")
         if not ss.complete:
             return PropertyResult(pid, None, "occurrence graph over budget",
                                   spec=spec)

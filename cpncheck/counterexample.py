@@ -322,9 +322,12 @@ def _render(value):
     Returns:
         The value, with tuples of floats shortened.
     """
+    if isinstance(value, tuple) and type(value) is not tuple:
+        # Index values (ph(1)), timed tokens (x@3) and the like are tuples
+        # underneath; they know how they are written.
+        return str(value)
     if isinstance(value, tuple):
-        return "(" + ", ".join(f"{v:g}" if isinstance(v, float) else str(v)
-                               for v in value) + ")"
+        return "(" + ", ".join(str(_render(v)) for v in value) + ")"
     if isinstance(value, float):
         return f"{value:g}"
     return value
