@@ -6,7 +6,6 @@ and the command-line tour (which also calls the oracle) only with
 ``CPNCHECK_CPNTOOLS=1``.
 """
 
-import filecmp
 import glob
 import importlib.util
 import os
@@ -34,6 +33,12 @@ def test_the_example_runs(script):
     assert done.stdout.strip()
 
 
+# Function to read a file with its line endings normalised.
+def _content(path):
+    with open(path, "rb") as fh:
+        return fh.read().replace(b"\r\n", b"\n")
+
+
 def test_the_example_nets_are_up_to_date(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "build_nets", os.path.join(EXAMPLES, "nets", "build_nets.py"))
@@ -45,5 +50,6 @@ def test_the_example_nets_are_up_to_date(tmp_path, monkeypatch):
                module.timed_loop(), module.ml_features()]
     for path in written:
         committed = os.path.join(EXAMPLES, "nets", os.path.basename(path))
-        assert filecmp.cmp(path, committed, shallow=False), \
+        # Line endings may differ after a checkout; the content may not.
+        assert _content(path) == _content(committed), \
             f"{os.path.basename(path)} is stale: run examples/nets/build_nets.py"
