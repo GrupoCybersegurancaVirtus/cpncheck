@@ -260,6 +260,134 @@ def _no_random(name: str):
     return ran
 
 
+# Function to write a value of a colour set as CPN Tools' mkstr does.
+def mkstr(value, colset: Optional["ColourSet"], sets: Dict[str, "ColourSet"]
+          ) -> str:
+    """``CS.mkstr v``: ``u(2)``, ``(u(1),b)``, ``{x=3,y=b}``, ``(~3)``...
+
+    Args:
+        value: The value.
+        colset (ColourSet, optional): Its colour set; None to go by the value.
+        sets (dict): Every declared colour set, for the components.
+
+    Returns:
+        str: The text, as CPN Tools writes it.
+    """
+    from .mllib import sml_int, sml_real
+
+    kind = colset.kind if colset is not None else None
+    if colset is not None and kind in ("alias", "subset"):
+        return mkstr(value, sets.get(colset.base), sets)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, IndexValue):
+        return f"{value[0]}({sml_int(value[1])})"
+    if isinstance(value, EnumValue):
+        return str(value)
+    if isinstance(value, int):
+        return sml_int(value) if value >= 0 else f"({sml_int(value)})"
+    if isinstance(value, float):
+        text = sml_real(value)
+        return text if value >= 0 else f"({text})"
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(value, tuple):
+        parts = colset.parts if colset is not None else []
+        if kind == "record":
+            return "{" + ",".join(
+                f"{label}={mkstr(v, sets.get(part), sets)}"
+                for label, part, v in zip(colset.labels, parts, value)) + "}"
+        if kind == "list":
+            inner = sets.get(colset.base)
+            return "[" + ",".join(mkstr(v, inner, sets) for v in value) + "]"
+        if kind == "unit" or value == ():
+            return "()"
+        subsets = [sets.get(p) for p in parts] or [None] * len(value)
+        return "(" + ",".join(mkstr(v, c, sets)
+                              for v, c in zip(value, subsets)) + ")"
+    return repr(value)
+
+
+# Function to build the functions CPN Tools declares for every colour set.
+def _colour_set_functions(name: str, colset: "ColourSet",
+                          sets: Dict[str, "ColourSet"]) -> Dict[str, Any]:
+    """``CS.size``, ``CS.ord``, ``CS.col``, ``CS.legal``, ``CS.mkstr``,
+    ``CS.mkstr_ms`` (and ``CS.input``/``CS.output``, which refuse).
+
+    ``ord`` and ``col`` number the values from 0 in the colour set's order;
+    on an infinite colour set they, and ``size``, raise as in CPN Tools.
+
+    Args:
+        name (str): The colour set.
+        colset (ColourSet): Its declaration.
+        sets (dict): Every declared colour set.
+
+    Returns:
+        dict: The functions, by qualified name.
+    """
+    def domain():
+        values = colset.domain(sets)
+        if values is None:
+            raise MLError(f"{name}: the colour set is not finite")
+        return values
+
+    def size(_unit):
+        return len(domain())
+
+    def ord_(value):
+        values = domain()
+        try:
+            return values.index(value)
+        except ValueError:
+            raise MLError(f"{name}.ord: {value!r} is not a value of {name}")
+
+    def col(index):
+        values = domain()
+        if not 0 <= index < len(values):
+            raise MLError(f"{name}.col: no value number {index}")
+        return values[index]
+
+    def legal(value):
+        values = colset.domain(sets)
+        if values is not None:
+            return value in values
+        base = colset
+        while base is not None and base.kind == "alias":
+            base = sets.get(base.base)
+        kind = base.kind if base is not None else "unknown"
+        if kind == "int":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if kind == "real":
+            return isinstance(value, float)
+        if kind == "string":
+            return isinstance(value, str)
+        if kind == "list":
+            return isinstance(value, tuple)
+        return True
+
+    def mkstr_ms(ms):
+        from .cpnml import _as_multiset
+        items = list(_as_multiset(ms).items())
+        try:
+            items.sort(key=lambda kv: ord_(kv[0]))
+        except MLError:
+            items.sort(key=lambda kv: repr(kv[0]))
+        return "++\n".join(f"{count}`{mkstr(v, colset, sets)}"
+                           for v, count in items)
+
+    def no_io(what):
+        def refuse(_arg):
+            raise MLError(f"{name}.{what} reads or writes a file; a net that "
+                          "does has no deterministic occurrence graph")
+        return refuse
+
+    return {f"{name}.size": size, f"{name}.ord": ord_, f"{name}.col": col,
+            f"{name}.legal": legal,
+            f"{name}.mkstr": lambda v: mkstr(v, colset, sets),
+            f"{name}.mkstr_ms": mkstr_ms,
+            f"{name}.input": no_io("input"), f"{name}.output": no_io("output")}
+
+
 # Function to multiply multisets into a multiset of tuples.
 def _product_of_multisets(parts) -> MultiSet:
     """``PR.mult (ms1, ms2, ...)``: every combination, counts multiplied.
@@ -388,6 +516,8 @@ class Declarations:
             self.globals[f"{name}.ran"] = _no_random(name)
             if colset.kind == "product":
                 self.globals[f"{name}.mult"] = _product_of_multisets
+            self.globals.update(_colour_set_functions(name, colset,
+                                                      self.colsets))
 
     # Method to build the CS.all() function of a colour set.
     def _all_of(self, colset: "ColourSet"):

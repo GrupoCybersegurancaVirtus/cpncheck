@@ -38,6 +38,8 @@ __all__ = [
     "EnumValue",
     "IndexValue",
     "IndexConstructor",
+    "ConValue",
+    "DataConstructor",
     "parse_expression",
     "parse_pattern",
     "parse_declarations",
@@ -67,6 +69,7 @@ KEYWORDS = {
 
 #: Operators, longest first so that ``<=`` is not read as ``<`` then ``=``.
 OPERATORS = [
+    "<><>", "<<=", ">>=", "<<", ">>", "==",
     "=>", "->", "<=", ">=", "<>", "::", "+++", "++", "--", "@++", "@+", "@", "^^", "^", "+", "-",
     "*",
     "/",
@@ -79,6 +82,39 @@ _INT = re.compile(r"~?\d+")
 # Qualified names such as ``List.nth`` are one identifier, not three.
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_']*)*")
 _STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+# A character literal, #"a"; characters are one-character strings here.
+_CHAR = re.compile(r'#"((?:[^"\\]|\\.)+)"')
+
+
+# Function to decode the escapes of a string or character literal.
+def _unescape(body: str) -> str:
+    """``\\n``, ``\\t``, ``\\"``, ``\\\\`` and ``\\ddd`` decoded.
+
+    Args:
+        body (str): The text between the quotes.
+
+    Returns:
+        str: The value.
+    """
+    if "\\" not in body:
+        return body
+    out, i = [], 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\" or i + 1 == len(body):
+            out.append(ch)
+            i += 1
+            continue
+        nxt = body[i + 1]
+        if nxt.isdigit():
+            out.append(chr(int(body[i + 1:i + 4])))
+            i += 4
+            continue
+        out.append({"n": "\n", "t": "\t", '"': '"', "\\": "\\"}.get(nxt, nxt))
+        i += 2
+    return "".join(out)
+
+
 _SPACE = re.compile(r"\s+")
 
 
@@ -112,9 +148,14 @@ def tokenize(text: str) -> List[Tuple[str, Any, int]]:
                 else:
                     i += 1
             continue
+        m = _CHAR.match(text, i)
+        if m:
+            out.append(("str", _unescape(m.group(1)), i))
+            i = m.end()
+            continue
         m = _STRING.match(text, i)
         if m:
-            out.append(("str", m.group(0)[1:-1], i))
+            out.append(("str", _unescape(m.group(0)[1:-1]), i))
             i = m.end()
             continue
         m = _REAL.match(text, i)
@@ -158,6 +199,12 @@ BINOPS = {
     # coefficient binds tighter than a comparison and looser than arithmetic,
     # so (n+1)`x and 2*k`x read as written.
     "+++": (3, "left"), "++": (3, "left"), "--": (3, "left"), "`": (4.5, "right"),
+    # Multiset comparisons bind looser than ++, so 1`a ++ 1`b == 1`b ++ 1`a
+    # compares the two sums, as in CPN Tools.
+    "==": (2.5, "left"), "<><>": (2.5, "left"), "<<": (2.5, "left"),
+    "<<=": (2.5, "left"), ">>": (2.5, "left"), ">>=": (2.5, "left"),
+    # Function composition, SML's infix 3.
+    "o": (3, "left"),
     "=": (4, "left"), "<>": (4, "left"), "<": (4, "left"), ">": (4, "left"),
     "<=": (4, "left"), ">=": (4, "left"),
     "::": (5, "right"), "^^": (5, "right"),
@@ -168,6 +215,10 @@ BINOPS = {
     "+": (6, "left"), "-": (6, "left"), "^": (6, "left"),
     "*": (7, "left"), "/": (7, "left"), "div": (7, "left"), "mod": (7, "left"),
 }
+
+#: Constructors and constants every pattern knows (SOME, NONE...); filled in
+#: from :mod:`cpncheck.mllib` at the end of this module.
+DEFAULT_SYMBOLS: Dict[str, Any] = {}
 
 #: Where function application sits: tighter than every binary operator.
 APPLICATION = 10
@@ -196,7 +247,8 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.source = source
-        self.symbols = symbols or {}
+        # SOME, NONE and the order constants are known to every pattern.
+        self.symbols = {**DEFAULT_SYMBOLS, **(symbols or {})}
 
     # Method to look at the current token.
     def peek(self):
@@ -397,13 +449,16 @@ class Parser:
         left = self.application()
         while True:
             kind, value, _ = self.peek()
-            if kind not in ("op", "kw") or value not in BINOPS:
+            if not (kind in ("op", "kw") or (kind == "id" and value == "o")) \
+                    or value not in BINOPS:
                 return left
             power, associativity = BINOPS[value]
             if power < level:
                 return left
             self.next()
-            right = self.binary(power + (1 if associativity == "left" else 0))
+            # A left-associative operator takes, on its right, only what
+            # binds strictly tighter: levels are not all whole numbers.
+            right = self.binary(power + (1e-6 if associativity == "left" else 0))
             left = ("binop", value, left, right)
 
     # Method to parse a chain of applications.
@@ -442,6 +497,8 @@ class Parser:
             bool: True when an application may continue.
         """
         kind, value, _ = self.peek()
+        if kind == "id" and value == "o":
+            return False
         if kind in ("int", "real", "str", "id"):
             return True
         if kind == "kw":
@@ -469,6 +526,12 @@ class Parser:
             if value == "nil":
                 return ("list", [])
             raise MLError(f"{value!r} cannot start an expression")
+        if kind == "id" and value == "op":
+            # (op +): the infix operator as a function of a pair.
+            kind2, sym, _ = self.next()
+            if sym not in BINOPS or sym in ("andalso", "orelse"):
+                raise MLError(f"op {sym!r} is not an infix operator")
+            return ("opfn", sym)
         if kind == "id":
             return ("var", value)
         if value == "#":
@@ -570,7 +633,7 @@ class Parser:
         kind, value, _ = self.next()
         if kind == "id":
             symbol = self.symbols.get(value, _MISSING)
-            if isinstance(symbol, IndexConstructor):
+            if isinstance(symbol, (IndexConstructor, DataConstructor)):
                 return ("pcon", value, self.pattern_atom())
             if symbol is not _MISSING:
                 return ("plit", symbol)          # a declared constant
@@ -1244,6 +1307,116 @@ class IndexConstructor:
         return f"<constructor {self.name}>"
 
 
+# Class holding a value built by a datatype constructor.
+class ConValue(tuple):
+    """``SOME 3``: a constructor applied to a value, as a (name, payload) pair.
+
+    A tuple subclass, so it hashes, compares and orders; patterns
+    ``SOME x`` match it by name. Nullary constructors (``NONE``) are
+    :class:`EnumValue` constants instead.
+    """
+
+    __slots__ = ()
+
+    # Method to build the value.
+    def __new__(cls, name: str, payload):
+        """Create the value.
+
+        Args:
+            name (str): The constructor.
+            payload: Its argument.
+
+        Returns:
+            ConValue: The value.
+        """
+        return super().__new__(cls, (name, payload))
+
+    # Property giving the constructor name.
+    @property
+    def name(self) -> str:
+        """The constructor.
+
+        Returns:
+            str: Its name.
+        """
+        return self[0]
+
+    # Property giving the argument.
+    @property
+    def payload(self):
+        """The value the constructor was applied to.
+
+        Returns:
+            The argument.
+        """
+        return self[1]
+
+    # Property telling whether the constructor took an argument.
+    @property
+    def has_payload(self) -> bool:
+        """Always True: nullary constructors are EnumValue constants.
+
+        Returns:
+            bool: True.
+        """
+        return True
+
+    # Method to render the value.
+    def __repr__(self):
+        """Render as ``SOME 3`` or ``SOME (1,2)``.
+
+        Returns:
+            str: The value as SML writes it.
+        """
+        inner = repr(self[1])
+        if isinstance(self[1], (ConValue, IndexValue)) or (
+                isinstance(self[1], tuple) and not isinstance(self[1], ConValue)):
+            inner = f"({inner.strip('()')})" if isinstance(self[1], tuple) \
+                and type(self[1]) is tuple else f"({inner})"
+        return f"{self[0]} {inner}"
+
+
+# Class building the values of a datatype constructor.
+class DataConstructor:
+    """A constructor taking an argument, such as ``SOME``.
+
+    Attributes:
+        name (str): The constructor.
+    """
+
+    __slots__ = ("name",)
+
+    # Method to create the constructor.
+    def __init__(self, name: str):
+        """Create the constructor.
+
+        Args:
+            name (str): Its name.
+        """
+        self.name = name
+
+    # Method to apply the constructor.
+    def __call__(self, payload):
+        """Build ``name payload``.
+
+        Args:
+            payload: The argument.
+
+        Returns:
+            ConValue: The value.
+        """
+        return ConValue(self.name, payload)
+
+    # Method to render the constructor.
+    def __repr__(self):
+        """Return a short representation.
+
+        Returns:
+            str: ``<constructor SOME>``.
+        """
+        return f"<constructor {self.name}>"
+
+
 # Class holding a function value with the environment it closed over.
 class Closure:
     """A CPN ML function: clauses, and the bindings visible where it was written.
@@ -1360,7 +1533,8 @@ def match_pattern(pattern, value, env: Optional[Dict] = None,
             return None
         return match_pattern(pattern[2], value[1:], out, fields)
     if tag == "pcon":
-        if not isinstance(value, IndexValue) or value[0] != pattern[1]:
+        if not isinstance(value, (IndexValue, ConValue)) or \
+                value[0] != pattern[1]:
             return None
         return match_pattern(pattern[2], value[1], env, fields)
     if tag == "precord":
@@ -1425,7 +1599,7 @@ def free_variables(tree) -> set:
     tag = tree[0]
     if tag == "var":
         return {tree[1]}
-    if tag in ("lit", "selector"):
+    if tag in ("lit", "selector", "opfn"):
         return set()
     if tag in ("neg", "not"):
         return free_variables(tree[1])
@@ -1512,14 +1686,37 @@ def _divide(a, b):
     return a / b
 
 
+# Function to divide integers as SML does.
+def _integer_division(a, b, op: str):
+    """``a div b`` (rounding down) or ``a mod b`` (sign of ``b``).
+
+    Python's ``//`` and ``%`` round the same way as SML's ``div`` and
+    ``mod``; only division by zero differs, which SML signals with ``Div``.
+
+    Args:
+        a (int): Numerator.
+        b (int): Denominator.
+        op (str): ``"div"`` or ``"mod"``.
+
+    Returns:
+        int: The result.
+
+    Raises:
+        MLError: On division by zero.
+    """
+    if b == 0:
+        raise MLError(f"exception Div: {a} {op} 0")
+    return a // b if op == "div" else a % b
+
+
 #: Binary operators that are a plain Python expression.
 _BINARY: Dict[str, Callable] = {
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "*": lambda a, b: a * b,
     "/": _divide,
-    "div": lambda a, b: a // b,
-    "mod": lambda a, b: a % b,
+    "div": lambda a, b: _integer_division(a, b, "div"),
+    "mod": lambda a, b: _integer_division(a, b, "mod"),
     "^": lambda a, b: a + b,
     "=": lambda a, b: a == b,
     "<>": lambda a, b: a != b,
@@ -1585,6 +1782,10 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
             raise MLError(f"unknown field {tree[1]!r}: the colour sets do not "
                           "declare it")
         return lambda env, i=index: (lambda record: record[i])
+
+    if tag == "opfn":
+        apply = _BINARY[tree[1]]
+        return lambda env, apply=apply: (lambda pair: apply(pair[0], pair[1]))
 
     if tag == "neg":
         inner = compile_(tree[1])
@@ -1700,137 +1901,23 @@ def compile_pattern(pattern, fields: Optional[Dict[str, int]] = None
 # The prelude
 # ---------------------------------------------------------------------------
 
-# Function to fold a list from the left, as SML does.
-def _foldl(function):
-    """``List.foldl f init xs``: ``f`` takes ``(element, accumulator)``.
-
-    Args:
-        function: The step function, curried CPN ML style.
-
-    Returns:
-        callable: The rest of the curried application.
-    """
-    def with_init(init):
-        def over(items):
-            acc = init
-            for item in items:
-                acc = function((item, acc))
-            return acc
-        return over
-    return with_init
-
-
-# Function to fold a list from the right, as SML does.
-def _foldr(function):
-    """``List.foldr f init xs``: ``f`` takes ``(element, accumulator)``.
-
-    Args:
-        function: The step function.
-
-    Returns:
-        callable: The rest of the curried application.
-    """
-    def with_init(init):
-        def over(items):
-            acc = init
-            for item in reversed(items):
-                acc = function((item, acc))
-            return acc
-        return over
-    return with_init
-
-
-# Function to curry a two-argument builtin.
-def _curry(function):
-    """Adapt a Python two-argument function to CPN ML's curried application.
-
-    Args:
-        function: ``f(a, b)``.
-
-    Returns:
-        callable: ``a -> b -> result``.
-    """
-    return lambda a: lambda b: function(a, b)
-
-
-#: The standard names a net may use without declaring them.
+#: The standard names a net may use without declaring them: CPN Tools'
+#: priorities, then the library (:mod:`cpncheck.mllib`), added at the end of
+#: this module because it is built on the classes above.
 PRELUDE: Dict[str, Any] = {
-    "empty": MultiSet(),
     # Transition priorities, as CPN Tools declares them.
     "P_HIGH": 100,
     "P_NORMAL": 1000,
     "P_LOW": 10000,
-    "abs": abs,
-    "real": float,
-    "floor": lambda x: int(__import__("math").floor(x)),
-    "ceil": lambda x: int(__import__("math").ceil(x)),
-    "round": lambda x: int(round(x)),
-    "trunc": int,
-    "not": lambda x: not x,
-    "hd": lambda xs: xs[0],
-    "tl": lambda xs: xs[1:],
-    "null": lambda xs: len(xs) == 0,
-    "length": len,
-    "rev": lambda xs: tuple(reversed(xs)),
-    "size": len,
-    "explode": lambda s: tuple(s),
-    "implode": lambda cs: "".join(cs),
-    "Int.toString": str,
-    "Int.abs": abs,
-    "Int.max": _curry(max),
-    "Int.min": _curry(min),
-    "Real.fromInt": float,
-    "Real.toString": lambda x: repr(x).replace("-", "~"),
-    "Real.max": _curry(max),
-    "Real.min": _curry(min),
-    "Bool.toString": lambda b: "true" if b else "false",
-    "String.concat": lambda xs: "".join(xs),
-    "String.size": len,
-    "List.length": len,
-    "List.hd": lambda xs: xs[0],
-    "List.tl": lambda xs: xs[1:],
-    "List.null": lambda xs: len(xs) == 0,
-    "List.rev": lambda xs: tuple(reversed(xs)),
-    "List.nth": _curry(lambda xs, i: xs[i]),
-    "List.take": _curry(lambda xs, n: xs[:n]),
-    "List.drop": _curry(lambda xs, n: xs[n:]),
-    "List.concat": lambda xss: tuple(x for xs in xss for x in xs),
-    "List.map": lambda f: lambda xs: tuple(f(x) for x in xs),
-    "map": lambda f: lambda xs: tuple(f(x) for x in xs),
-    "List.filter": lambda f: lambda xs: tuple(x for x in xs if f(x)),
-    "List.all": lambda f: lambda xs: all(f(x) for x in xs),
-    "List.exists": lambda f: lambda xs: any(f(x) for x in xs),
-    "List.foldl": _foldl,
-    "List.foldr": _foldr,
-    "List.last": lambda xs: xs[-1],
-    "List.tabulate": _curry(lambda n, f: tuple(f(i) for i in range(n))),
-    "ListPair.zip": lambda pair: tuple(zip(pair[0], pair[1])),
-    "ListPair.unzip": lambda xs: (tuple(a for a, _ in xs),
-                                  tuple(b for _, b in xs)),
-    "ListPair.map": lambda f: lambda pair: tuple(
-        f((a, b)) for a, b in zip(pair[0], pair[1])),
-    "ListPair.all": lambda f: lambda pair: all(
-        f((a, b)) for a, b in zip(pair[0], pair[1])),
-    "ListPair.exists": lambda f: lambda pair: any(
-        f((a, b)) for a, b in zip(pair[0], pair[1])),
-    "ListPair.foldl": lambda f: lambda init: lambda pair: _pair_foldl(
-        f, init, pair),
 }
 
 
-# Function to fold over two lists at once, as ListPair does.
-def _pair_foldl(function, init, pair):
-    """``ListPair.foldl f init (xs, ys)``, stopping at the shorter list.
+# The library, and the operators defined in it.
+from .mllib import LIBRARY as _LIBRARY, SYMBOLS as _SYMBOLS  # noqa: E402
+from .mllib import ms_compare as _ms_compare  # noqa: E402
 
-    Args:
-        function: The step, taking ``(x, y, accumulator)``.
-        init: The initial accumulator.
-        pair (tuple): The two lists.
-
-    Returns:
-        The accumulated value.
-    """
-    acc = init
-    for a, b in zip(pair[0], pair[1]):
-        acc = function((a, b, acc))
-    return acc
+PRELUDE.update(_LIBRARY)
+DEFAULT_SYMBOLS.update(_SYMBOLS)
+for _op in ("==", "<><>", "<<", "<<=", ">>", ">>="):
+    _BINARY[_op] = _ms_compare(_op)
+_BINARY["o"] = lambda f, g: (lambda x: f(g(x)))

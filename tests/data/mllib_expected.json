@@ -1,0 +1,1055 @@
+{
+ "banner": "Standard ML of New Jersey v110.78 [built: Sat Feb 21 13:41:57 2015]\nSimulator/CPN v4.0.1 [built: Sat Feb 21 14:43:58 2015 by michael on hot-as-ice]\n\nPortions Copyright (c) 2010-2013 AIS Group, Eindhoven University of Technology\nPortions Copyright (c) 2015 Brinformatics\n",
+ "cases": [
+  {
+   "expr": "7 div 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "~7 div 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~4 : int"
+  },
+  {
+   "expr": "7 mod 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1 : int"
+  },
+  {
+   "expr": "~7 mod 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "7 mod ~3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~2 : int"
+  },
+  {
+   "expr": "2 * 3 + 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 10 : int"
+  },
+  {
+   "expr": "~(3 - 5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "abs ~4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "Int.abs ~4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "Int.max (3, 9)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 9 : int"
+  },
+  {
+   "expr": "Int.min (3, 9)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "Int.sign ~5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~1 : int"
+  },
+  {
+   "expr": "Int.sign 0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 0 : int"
+  },
+  {
+   "expr": "Int.toString 42",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"42\" : string"
+  },
+  {
+   "expr": "Int.toString ~42",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"~42\" : string"
+  },
+  {
+   "expr": "Int.fromString \"17\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = SOME 17 : int option"
+  },
+  {
+   "expr": "Int.fromString \"x\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = NONE : int option"
+  },
+  {
+   "expr": "Int.compare (1, 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = LESS : order"
+  },
+  {
+   "expr": "Int.compare (2, 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = EQUAL : order"
+  },
+  {
+   "expr": "1 div 0",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "3 < 4 andalso 4 >= 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "not (3 = 3) orelse 2 <> 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "1.5 + 2.25",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3.75 : real"
+  },
+  {
+   "expr": "7.0 / 2.0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3.5 : real"
+  },
+  {
+   "expr": "real 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3.0 : real"
+  },
+  {
+   "expr": "floor 2.7",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "floor ~2.7",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~3 : int"
+  },
+  {
+   "expr": "ceil 2.1",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "round 2.5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "round 3.5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "trunc ~2.7",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~2 : int"
+  },
+  {
+   "expr": "Real.fromInt 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4.0 : real"
+  },
+  {
+   "expr": "Real.max (1.5, 2.5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2.5 : real"
+  },
+  {
+   "expr": "Real.min (1.5, 2.5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1.5 : real"
+  },
+  {
+   "expr": "Real.abs ~1.5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1.5 : real"
+  },
+  {
+   "expr": "Real.floor 3.9",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "Real.toString 2.5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"2.5\" : string"
+  },
+  {
+   "expr": "Math.sqrt 16.0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4.0 : real"
+  },
+  {
+   "expr": "Math.pi > 3.14",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "\"ab\" ^ \"cd\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"abcd\" : string"
+  },
+  {
+   "expr": "String.size \"hello\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 5 : int"
+  },
+  {
+   "expr": "String.concat [\"a\", \"b\", \"c\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"abc\" : string"
+  },
+  {
+   "expr": "String.concatWith \", \" [\"a\", \"b\", \"c\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"a, b, c\" : string"
+  },
+  {
+   "expr": "String.sub (\"hello\", 1)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = #\"e\" : char"
+  },
+  {
+   "expr": "String.substring (\"hello\", 1, 3)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"ell\" : string"
+  },
+  {
+   "expr": "substring (\"hello\", 1, 3)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"ell\" : string"
+  },
+  {
+   "expr": "String.extract (\"hello\", 2, NONE)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"llo\" : string"
+  },
+  {
+   "expr": "String.extract (\"hello\", 1, SOME 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"el\" : string"
+  },
+  {
+   "expr": "String.isPrefix \"he\" \"hello\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "String.isSuffix \"lo\" \"hello\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "String.isSubstring \"ell\" \"hello\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "String.explode \"abc\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [#\"a\",#\"b\",#\"c\"] : char list"
+  },
+  {
+   "expr": "explode \"abc\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [#\"a\",#\"b\",#\"c\"] : char list"
+  },
+  {
+   "expr": "implode [#\"x\", #\"y\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"xy\" : string"
+  },
+  {
+   "expr": "String.implode [#\"x\", #\"y\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"xy\" : string"
+  },
+  {
+   "expr": "str #\"a\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"a\" : string"
+  },
+  {
+   "expr": "String.str #\"a\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"a\" : string"
+  },
+  {
+   "expr": "ord #\"A\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 65 : int"
+  },
+  {
+   "expr": "chr 66",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = #\"B\" : char"
+  },
+  {
+   "expr": "Char.ord #\"a\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 97 : int"
+  },
+  {
+   "expr": "Char.chr 97",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = #\"a\" : char"
+  },
+  {
+   "expr": "Char.isDigit #\"7\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "Char.isAlpha #\"7\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "Char.isUpper #\"Q\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "Char.isLower #\"Q\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "Char.isSpace #\" \"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "Char.toUpper #\"q\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = #\"Q\" : char"
+  },
+  {
+   "expr": "Char.toLower #\"Q\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = #\"q\" : char"
+  },
+  {
+   "expr": "String.map Char.toUpper \"abc\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"ABC\" : string"
+  },
+  {
+   "expr": "String.tokens (fn ch => ch = #\",\") \"a,b,,c\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [\"a\",\"b\",\"c\"] : string list"
+  },
+  {
+   "expr": "String.fields (fn ch => ch = #\",\") \"a,b,,c\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [\"a\",\"b\",\"\",\"c\"] : string list"
+  },
+  {
+   "expr": "String.translate (fn ch => if ch = #\"a\" then \"AA\" else str ch) \"banana\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"bAAnAAnAA\" : string"
+  },
+  {
+   "expr": "\"abc\" < \"abd\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "concat [\"x\", \"y\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"xy\" : string"
+  },
+  {
+   "expr": "String.sub (\"abc\", 5)",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "SOME 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = SOME 3 : int option"
+  },
+  {
+   "expr": "NONE : int option",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = NONE : int option"
+  },
+  {
+   "expr": "isSome (SOME 1)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "isSome (NONE : int option)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "valOf (SOME 5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 5 : int"
+  },
+  {
+   "expr": "Option.valOf (SOME 5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 5 : int"
+  },
+  {
+   "expr": "getOpt (NONE, 9)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 9 : int"
+  },
+  {
+   "expr": "getOpt (SOME 1, 9)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1 : int"
+  },
+  {
+   "expr": "Option.map (fn x => x + 1) (SOME 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = SOME 3 : int option"
+  },
+  {
+   "expr": "Option.getOpt (SOME 4, 0)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "valOf (NONE : int option)",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "case SOME 4 of SOME x => x * 10 | NONE => 0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 40 : int"
+  },
+  {
+   "expr": "case (NONE : int option) of SOME x => x | NONE => ~1",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ~1 : int"
+  },
+  {
+   "expr": "1 :: [2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "hd [4, 5]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "tl [4, 5]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [5] : int list"
+  },
+  {
+   "expr": "length [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "rev [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [3,2,1] : int list"
+  },
+  {
+   "expr": "List.length [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "List.nth ([10, 20, 30], 1)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 20 : int"
+  },
+  {
+   "expr": "List.take ([1, 2, 3, 4], 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2] : int list"
+  },
+  {
+   "expr": "List.drop ([1, 2, 3, 4], 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [3,4] : int list"
+  },
+  {
+   "expr": "List.concat [[1], [2, 3], []]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "List.map (fn x => x * x) [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,4,9] : int list"
+  },
+  {
+   "expr": "map (fn x => x + 1) [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,3] : int list"
+  },
+  {
+   "expr": "List.filter (fn x => x > 1) [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,3] : int list"
+  },
+  {
+   "expr": "List.all (fn x => x > 0) [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "List.exists (fn x => x > 2) [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "List.foldl (op +) 0 [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 6 : int"
+  },
+  {
+   "expr": "List.foldl (fn (x, acc) => x :: acc) [] [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [3,2,1] : int list"
+  },
+  {
+   "expr": "List.foldr (fn (x, acc) => x :: acc) [] [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "foldl (op +) 0 [4, 5]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 9 : int"
+  },
+  {
+   "expr": "foldr (op ^) \"\" [\"a\", \"b\"]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"ab\" : string"
+  },
+  {
+   "expr": "List.last [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "List.tabulate (4, fn i => i * i)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [0,1,4,9] : int list"
+  },
+  {
+   "expr": "List.find (fn x => x > 1) [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = SOME 2 : int option"
+  },
+  {
+   "expr": "List.find (fn x => x > 9) [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = NONE : int option"
+  },
+  {
+   "expr": "List.partition (fn x => x mod 2 = 0) [1, 2, 3, 4]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = ([2,4],[1,3]) : int list * int list"
+  },
+  {
+   "expr": "List.getItem [7, 8]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = SOME (7,[8]) : (int * int list) option"
+  },
+  {
+   "expr": "List.mapPartial (fn x => if x > 1 then SOME (x * 2) else NONE) [1, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [4,6] : int list"
+  },
+  {
+   "expr": "List.app (fn x => ()) [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = () : unit"
+  },
+  {
+   "expr": "List.rev [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,1] : int list"
+  },
+  {
+   "expr": "List.null []",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "List.hd [3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "List.tl [3, 4]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [4] : int list"
+  },
+  {
+   "expr": "hd ([] : int list)",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "List.nth ([1], 5)",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "(fn x => x + 1) 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 5 : int"
+  },
+  {
+   "expr": "((fn x => x * 2) o (fn x => x + 1)) 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 8 : int"
+  },
+  {
+   "expr": "let fun f 0 = 1 | f n = n * f (n - 1) in f 5 end",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 120 : int"
+  },
+  {
+   "expr": "let val (p, q) = (1, 2) in p + q end",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "mem [1, 2, 3] 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "mem [1, 2, 3] 5",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "rm 3 [1, 2, 3, 4, 3, 5]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,4,3,5] : int list"
+  },
+  {
+   "expr": "rm 9 [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2] : int list"
+  },
+  {
+   "expr": "rmall 3 [1, 2, 3, 4, 3, 5]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,4,5] : int list"
+  },
+  {
+   "expr": "contains [1, 2, 3] [3, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "contains [1, 2] [3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "contains_all [1, 2, 3] [3, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "contains_all [1, 2, 3, 3] [3, 2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "remdupl [1, 2, 3, 2, 4, 2, 5, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,4,2,5,3] : int list"
+  },
+  {
+   "expr": "intersect [1, 2, 3] [2, 3, 4]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,3] : int list"
+  },
+  {
+   "expr": "intersect [1, 1, 2] [1, 2, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2] : int list"
+  },
+  {
+   "expr": "union [1, 2] [2, 3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,2,3] : int list"
+  },
+  {
+   "expr": "listsub [1, 2, 3] [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [3] : int list"
+  },
+  {
+   "expr": "listsub [1, 2, 3] [1, 2, 2]",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "ins [1, 2, 3] 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3,2] : int list"
+  },
+  {
+   "expr": "ins_new [1, 2, 3] 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3,4] : int list"
+  },
+  {
+   "expr": "ins_new [1, 2, 3] 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "sort (op <) [3, 1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "sort (fn (x, y) => x > y) [3, 1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [3,2,1] : int list"
+  },
+  {
+   "expr": "[1, 2] ^^ [3]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3] : int list"
+  },
+  {
+   "expr": "1`a ++ 2`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [a,b,b] : E ms"
+  },
+  {
+   "expr": "1`a ++ 1`b ++ 1`a",
+   "mode": "bag",
+   "cpntools": "val pyra_raw = [a,b,a] : E ms"
+  },
+  {
+   "expr": "3`7",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [7,7,7] : int ms"
+  },
+  {
+   "expr": "empty : E ms",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [] : E ms"
+  },
+  {
+   "expr": "1`a ++ 2`b -- 1`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [a,b] : E ms"
+  },
+  {
+   "expr": "1`a -- 1`b",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "size (1`a ++ 2`b)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "cf (b, 1`a ++ 2`b)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "cf (c, 1`a ++ 2`b)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 0 : int"
+  },
+  {
+   "expr": "ms_to_col (1`c)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = c : E"
+  },
+  {
+   "expr": "ms_to_col (1`a ++ 1`b)",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "ms_to_list (2`a ++ 1`c)",
+   "mode": "bag",
+   "cpntools": "val pyra_raw = [a,a,c] : E list"
+  },
+  {
+   "expr": "list_to_ms [a, b, a]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [a,b,a] : E ms"
+  },
+  {
+   "expr": "ext_col (fn x => x + 1) (2`1 ++ 1`5)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,2,6] : int ms"
+  },
+  {
+   "expr": "ext_ms (fn x => 2`x) (1`1 ++ 1`2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,1,2,2] : int ms"
+  },
+  {
+   "expr": "filter (fn x => x > 1) (1`1 ++ 2`2 ++ 1`3)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [2,2,3] : int ms"
+  },
+  {
+   "expr": "1`a ++ 1`b == 1`b ++ 1`a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "1`a == 2`a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "1`a <<= 1`a ++ 1`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "2`a <<= 1`a ++ 1`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "1`a ++ 1`b >>= 1`a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "1`a << 1`a ++ 1`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "1`a >> 1`a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "1`a <><> 2`a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "(2 + 1)`b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [b,b,b] : E ms"
+  },
+  {
+   "expr": "E.size ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "E.ord b",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1 : int"
+  },
+  {
+   "expr": "E.col 2",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = c : E.cs"
+  },
+  {
+   "expr": "E.legal a",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "E.mkstr c",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"c\" : string"
+  },
+  {
+   "expr": "E.mkstr_ms (1`a ++ 2`b)",
+   "mode": "bag",
+   "cpntools": "val pyra_raw = \"1`a++\\n2`b\" : string"
+  },
+  {
+   "expr": "E.all ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [a,b,c] : E.cs ms"
+  },
+  {
+   "expr": "U.size ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "U.ord (u 3)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "U.col 0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = u 1 : U.cs"
+  },
+  {
+   "expr": "U.all ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [u 1,u 2,u 3,u 4] : U.cs ms"
+  },
+  {
+   "expr": "U.mkstr (u 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"u(2)\" : string"
+  },
+  {
+   "expr": "U.legal (u 2)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "PR.size ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 12 : int"
+  },
+  {
+   "expr": "PR.mkstr (u 1, b)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"(u(1),b)\" : string"
+  },
+  {
+   "expr": "PR.ord (u 2, a)",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 3 : int"
+  },
+  {
+   "expr": "PR.col 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = (u 2,b) : U.cs * E.cs"
+  },
+  {
+   "expr": "PR.mult (1`u 1 ++ 1`u 2, 1`a ++ 1`c)",
+   "mode": "bag",
+   "cpntools": "val pyra_raw = [(u 1,a),(u 1,c),(u 2,a),(u 2,c)] : PR ms"
+  },
+  {
+   "expr": "SMALL.size ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 5 : int"
+  },
+  {
+   "expr": "SMALL.legal 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "SMALL.legal 9",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = false : bool"
+  },
+  {
+   "expr": "SMALL.ord 3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 2 : int"
+  },
+  {
+   "expr": "SMALL.col 0",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1 : SMALL.cs"
+  },
+  {
+   "expr": "SMALL.all ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [1,2,3,4,5] : SMALL.cs ms"
+  },
+  {
+   "expr": "SMALL.mkstr 4",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"4\" : string"
+  },
+  {
+   "expr": "NAME.mkstr \"hi\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"\\\"hi\\\"\" : string"
+  },
+  {
+   "expr": "NAME.legal \"x\"",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "IL.mkstr [1, 2]",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"[1,2]\" : string"
+  },
+  {
+   "expr": "R.mkstr {x = 3, y = b}",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"{x=3,y=b}\" : string"
+  },
+  {
+   "expr": "(#y {x = 3, y = b})",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = b : E"
+  },
+  {
+   "expr": "(#x {x = 3, y = b}) + 1",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 4 : int"
+  },
+  {
+   "expr": "INT.mkstr ~3",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"(~3)\" : string"
+  },
+  {
+   "expr": "INT.legal 7",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = true : bool"
+  },
+  {
+   "expr": "BOOL.all ()",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = [false,true] : BOOL.cs ms"
+  },
+  {
+   "expr": "BOOL.mkstr true",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = \"true\" : string"
+  },
+  {
+   "expr": "BOOL.ord true",
+   "mode": "exact",
+   "cpntools": "val pyra_raw = 1 : int"
+  },
+  {
+   "expr": "E.col 7",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  },
+  {
+   "expr": "INT.size ()",
+   "mode": "exact",
+   "cpntools": "EXCEPTION: org.cpntools.accesscpn.engine.EvaluationException: Unhandled Exception: ExnDuringExecution\n\t../compiler/TopLevel/interact/evalloop.sml:292.17-292.20\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Basics/stats/stats.sml:198.40\n\t../compiler/Execution/main/isolate.sml:26.50\n\t../compiler/TopLevel/interact/evalloop.sml:44.55\n\t../compiler/Execution/main/execute.sml:49.48-49.60\n4"
+  }
+ ]
+}

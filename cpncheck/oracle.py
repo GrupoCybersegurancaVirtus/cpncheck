@@ -77,7 +77,7 @@ try {
     out.log.push("compiled");
     function ev(code) { return String(s.evaluate(code)); }
     ev("val ogpath = \"" + job.ogpath + "\";");
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= (job.stateSpace ? 8 : 0); i++) {
         var r = ev("use (ogpath^\"switch" + i + ".sml\");");
         if (r.indexOf("Error") >= 0 || r.indexOf("uncaught exception") >= 0) {
             out.errors["enter_state_space"] = "switch" + i + ": " + r.substring(0, 2000);
@@ -85,10 +85,12 @@ try {
     }
     out.log.push("entered state space");
     var t0 = java.lang.System.currentTimeMillis();
-    ev("CalculateOccGraph ();");
-    ev("CalculateSccGraph ();");
-    out.graph_ms = java.lang.System.currentTimeMillis() - t0;
-    ev("use (ogpath^\"ASKCTL/ASKCTLloader.sml\");");
+    if (job.stateSpace) {
+        ev("CalculateOccGraph ();");
+        ev("CalculateSccGraph ();");
+        out.graph_ms = java.lang.System.currentTimeMillis() - t0;
+        ev("use (ogpath^\"ASKCTL/ASKCTLloader.sml\");");
+    }
     var d = ev(job.declarations);
     if (d.indexOf("Error") >= 0) { out.errors["declarations"] = d.substring(0, 4000); }
     for (var k = 0; k < job.queries.length; k++) {
@@ -104,6 +106,15 @@ try {
             out.errors[key] = String(qe).substring(0, 1500);
         }
         out.log.push(key + " " + (java.lang.System.currentTimeMillis() - q0) + "ms");
+    }
+    // Raw queries: the REPL's own answer, value and type, as text.
+    out.raw = {};
+    for (var r = 0; r < job.raw.length; r++) {
+        try {
+            out.raw[job.raw[r][0]] = ev("val pyra_raw = " + job.raw[r][1] + ";");
+        } catch (re) {
+            out.raw[job.raw[r][0]] = "EXCEPTION: " + String(re).substring(0, 1500);
+        }
     }
 } catch (e) {
     out.errors["driver"] = String(e);
@@ -288,7 +299,9 @@ class CPNToolsOracle:
 
     # Method to evaluate queries on a net with the CPN Tools engine.
     def run(self, cpn_path: str, declarations: str,
-            queries: Dict[str, str], timeout: int = 1800) -> Dict[str, object]:
+            queries: Dict[str, str], timeout: int = 1800,
+            raw: Optional[Dict[str, str]] = None,
+            state_space: bool = True) -> Dict[str, object]:
         """Load, compile and explore a net in CPN Tools, then evaluate queries.
 
         Args:
@@ -296,9 +309,15 @@ class CPNToolsOracle:
             declarations (str): CPN ML declarations evaluated before the queries.
             queries (dict): ``{key: string-valued ML expression}``.
             timeout (int): Seconds before the run is abandoned.
+            raw (dict, optional): ``{key: ML expression of any type}``; the
+                answer is the REPL's text (``val pyra_raw = [1,2] : int
+                list``), for :func:`parse_sml_value`.
+            state_space (bool): Enter the state-space tool and build the
+                graph first; not needed to evaluate expressions.
 
         Returns:
-            dict: ``{"values", "errors", "banner", "graph_ms", "elapsed"}``.
+            dict: ``{"values", "errors", "raw", "banner", "graph_ms",
+            "elapsed"}``.
 
         Raises:
             OracleUnavailable: If the engine cannot be started.
@@ -321,6 +340,8 @@ class CPNToolsOracle:
             "ogpath": _cygpath(os.path.join(self.cpnsim, "statespacefiles")) + "/",
             "declarations": declarations,
             "queries": [[k, v] for k, v in queries.items()],
+            "raw": [[k, v] for k, v in (raw or {}).items()],
+            "stateSpace": state_space,
             "resultFile": result_file,
         }
         with open(job_file, "w", encoding="utf-8") as fh:

@@ -1,0 +1,244 @@
+# CPN ML library cases: one expression per line, evaluated by CPN Tools 4.0.1
+# (tests/data/make_mllib_fixture.py stores its answers in mllib_expected.json)
+# and by CPNCheck (tests/test_mllib.py compares the two).
+#
+# The net tests/nets/mllib.cpn declares: colset E = with a | b | c;
+# val N = 4; colset U = index u with 1..N; colset PR = product U * E;
+# colset SMALL = int with 1..5; colset NAME = string; colset IL = list INT;
+# colset R = record x:INT * y:E.
+#
+# In CPN Tools "size" is the multiset size, "@" only stamps a token (lists
+# are joined with "^^"), and "null" is a time value, not list emptiness.
+# Variables must not be named a, b or c: those are the constants of E. A case
+# starting with "#" must be bracketed, or it reads as a comment.
+#
+# A line starting with "bag:" compares lists or multiset strings without
+# regard to order (CPN Tools' internal order of a multiset is not part of its
+# meaning). Blank lines and "#" lines are ignored.
+
+# --- integers -------------------------------------------------------------
+7 div 2
+~7 div 2
+7 mod 3
+~7 mod 3
+7 mod ~3
+2 * 3 + 4
+~(3 - 5)
+abs ~4
+Int.abs ~4
+Int.max (3, 9)
+Int.min (3, 9)
+Int.sign ~5
+Int.sign 0
+Int.toString 42
+Int.toString ~42
+Int.fromString "17"
+Int.fromString "x"
+Int.compare (1, 2)
+Int.compare (2, 2)
+1 div 0
+3 < 4 andalso 4 >= 4
+not (3 = 3) orelse 2 <> 3
+
+# --- reals ----------------------------------------------------------------
+1.5 + 2.25
+7.0 / 2.0
+real 3
+floor 2.7
+floor ~2.7
+ceil 2.1
+round 2.5
+round 3.5
+trunc ~2.7
+Real.fromInt 4
+Real.max (1.5, 2.5)
+Real.min (1.5, 2.5)
+Real.abs ~1.5
+Real.floor 3.9
+Real.toString 2.5
+Math.sqrt 16.0
+Math.pi > 3.14
+
+# --- strings and characters -----------------------------------------------
+"ab" ^ "cd"
+String.size "hello"
+String.concat ["a", "b", "c"]
+String.concatWith ", " ["a", "b", "c"]
+String.sub ("hello", 1)
+String.substring ("hello", 1, 3)
+substring ("hello", 1, 3)
+String.extract ("hello", 2, NONE)
+String.extract ("hello", 1, SOME 2)
+String.isPrefix "he" "hello"
+String.isSuffix "lo" "hello"
+String.isSubstring "ell" "hello"
+String.explode "abc"
+explode "abc"
+implode [#"x", #"y"]
+String.implode [#"x", #"y"]
+str #"a"
+String.str #"a"
+ord #"A"
+chr 66
+Char.ord #"a"
+Char.chr 97
+Char.isDigit #"7"
+Char.isAlpha #"7"
+Char.isUpper #"Q"
+Char.isLower #"Q"
+Char.isSpace #" "
+Char.toUpper #"q"
+Char.toLower #"Q"
+String.map Char.toUpper "abc"
+String.tokens (fn ch => ch = #",") "a,b,,c"
+String.fields (fn ch => ch = #",") "a,b,,c"
+String.translate (fn ch => if ch = #"a" then "AA" else str ch) "banana"
+"abc" < "abd"
+#"a" < #"b"
+concat ["x", "y"]
+String.sub ("abc", 5)
+
+# --- options --------------------------------------------------------------
+SOME 3
+NONE : int option
+isSome (SOME 1)
+isSome (NONE : int option)
+valOf (SOME 5)
+Option.valOf (SOME 5)
+getOpt (NONE, 9)
+getOpt (SOME 1, 9)
+Option.map (fn x => x + 1) (SOME 2)
+Option.getOpt (SOME 4, 0)
+valOf (NONE : int option)
+case SOME 4 of SOME x => x * 10 | NONE => 0
+case (NONE : int option) of SOME x => x | NONE => ~1
+
+# --- SML lists ------------------------------------------------------------
+1 :: [2, 3]
+hd [4, 5]
+tl [4, 5]
+length [1, 2, 3]
+rev [1, 2, 3]
+List.length [1, 2, 3]
+List.nth ([10, 20, 30], 1)
+List.take ([1, 2, 3, 4], 2)
+List.drop ([1, 2, 3, 4], 2)
+List.concat [[1], [2, 3], []]
+List.map (fn x => x * x) [1, 2, 3]
+map (fn x => x + 1) [1, 2]
+List.filter (fn x => x > 1) [1, 2, 3]
+List.all (fn x => x > 0) [1, 2]
+List.exists (fn x => x > 2) [1, 2]
+List.foldl (op +) 0 [1, 2, 3]
+List.foldl (fn (x, acc) => x :: acc) [] [1, 2, 3]
+List.foldr (fn (x, acc) => x :: acc) [] [1, 2, 3]
+foldl (op +) 0 [4, 5]
+foldr (op ^) "" ["a", "b"]
+List.last [1, 2, 3]
+List.tabulate (4, fn i => i * i)
+List.find (fn x => x > 1) [1, 2, 3]
+List.find (fn x => x > 9) [1, 2, 3]
+List.partition (fn x => x mod 2 = 0) [1, 2, 3, 4]
+List.getItem [7, 8]
+List.mapPartial (fn x => if x > 1 then SOME (x * 2) else NONE) [1, 2, 3]
+List.app (fn x => ()) [1, 2]
+List.rev [1, 2]
+List.null []
+List.hd [3]
+List.tl [3, 4]
+hd ([] : int list)
+List.nth ([1], 5)
+(fn x => x + 1) 4
+((fn x => x * 2) o (fn x => x + 1)) 3
+let fun f 0 = 1 | f n = n * f (n - 1) in f 5 end
+let val (p, q) = (1, 2) in p + q end
+
+# --- CPN Tools list functions ---------------------------------------------
+mem [1, 2, 3] 2
+mem [1, 2, 3] 5
+rm 3 [1, 2, 3, 4, 3, 5]
+rm 9 [1, 2]
+rmall 3 [1, 2, 3, 4, 3, 5]
+contains [1, 2, 3] [3, 2, 3]
+contains [1, 2] [3]
+contains_all [1, 2, 3] [3, 2, 3]
+contains_all [1, 2, 3, 3] [3, 2, 3]
+remdupl [1, 2, 3, 2, 4, 2, 5, 3]
+intersect [1, 2, 3] [2, 3, 4]
+intersect [1, 1, 2] [1, 2, 2]
+union [1, 2] [2, 3]
+listsub [1, 2, 3] [1, 2]
+listsub [1, 2, 3] [1, 2, 2]
+ins [1, 2, 3] 2
+ins_new [1, 2, 3] 4
+ins_new [1, 2, 3] 2
+sort (op <) [3, 1, 2]
+sort (fn (x, y) => x > y) [3, 1, 2]
+[1, 2] ^^ [3]
+
+# --- multisets ------------------------------------------------------------
+1`a ++ 2`b
+bag:1`a ++ 1`b ++ 1`a
+3`7
+empty : E ms
+1`a ++ 2`b -- 1`b
+1`a -- 1`b
+size (1`a ++ 2`b)
+cf (b, 1`a ++ 2`b)
+cf (c, 1`a ++ 2`b)
+ms_to_col (1`c)
+ms_to_col (1`a ++ 1`b)
+bag:ms_to_list (2`a ++ 1`c)
+list_to_ms [a, b, a]
+ext_col (fn x => x + 1) (2`1 ++ 1`5)
+ext_ms (fn x => 2`x) (1`1 ++ 1`2)
+filter (fn x => x > 1) (1`1 ++ 2`2 ++ 1`3)
+1`a ++ 1`b == 1`b ++ 1`a
+1`a == 2`a
+1`a <<= 1`a ++ 1`b
+2`a <<= 1`a ++ 1`b
+1`a ++ 1`b >>= 1`a
+1`a << 1`a ++ 1`b
+1`a >> 1`a
+1`a <><> 2`a
+(2 + 1)`b
+
+# --- colour-set functions -------------------------------------------------
+E.size ()
+E.ord b
+E.col 2
+E.legal a
+E.mkstr c
+bag:E.mkstr_ms (1`a ++ 2`b)
+E.all ()
+U.size ()
+U.ord (u 3)
+U.col 0
+U.all ()
+U.mkstr (u 2)
+U.legal (u 2)
+PR.size ()
+PR.mkstr (u 1, b)
+PR.ord (u 2, a)
+PR.col 4
+bag:PR.mult (1`u 1 ++ 1`u 2, 1`a ++ 1`c)
+SMALL.size ()
+SMALL.legal 3
+SMALL.legal 9
+SMALL.ord 3
+SMALL.col 0
+SMALL.all ()
+SMALL.mkstr 4
+NAME.mkstr "hi"
+NAME.legal "x"
+IL.mkstr [1, 2]
+R.mkstr {x = 3, y = b}
+(#y {x = 3, y = b})
+(#x {x = 3, y = b}) + 1
+INT.mkstr ~3
+INT.legal 7
+BOOL.all ()
+BOOL.mkstr true
+BOOL.ord true
+E.col 7
+INT.size ()
