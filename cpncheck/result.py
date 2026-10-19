@@ -223,7 +223,31 @@ class ModelCheckResult:
         lines.append(head)
         lines.append("=" * max(len(head), 76))
         st = self.stats
-        if st.get("reduction") == "sweep":
+        if "+" in str(st.get("reduction") or ""):
+            incomplete = '' if st.get('complete', True) else ' (SOME INCOMPLETE)'
+            if isinstance(st.get("sweeps"), list):
+                kinds: Dict[str, List[int]] = {}
+                for sweep in st["sweeps"]:
+                    k = kinds.setdefault(sweep["successors"], [0, 0])
+                    k[0] += 1
+                    k[1] = max(k[1], sweep["peak_stored"])
+                how = "; ".join(f"{n} sweep(s) over {kind} successors, at most "
+                                f"{peak} stored" for kind, (n, peak)
+                                in kinds.items())
+                how += f", progress {st.get('progress')}"
+            else:
+                how = ", ".join(f"{kind} graph {n} markings"
+                                for kind, n in st.get("graphs", {}).items())
+            lines.append(f"  reduction        : {st['reduction']}; {how}"
+                         f"{incomplete}")
+            if st.get("equivalence"):
+                lines.append(f"  equivalence      : {st['equivalence']}"
+                             f"{'' if st.get('exact') else ' (tested)'}")
+            if st.get("consistency"):
+                lines.append(f"  consistency      : {st['consistency']}")
+            for note in st.get("notes", []):
+                lines.append(f"  note             : {note}")
+        elif st.get("reduction") == "sweep":
             lines.append(f"  reduction        : sweep-line, progress "
                          f"{st.get('progress')}; {st.get('explored')} markings "
                          f"explored in {st.get('sweeps')} sweep(s), at most "

@@ -39,7 +39,8 @@ docs = ["pdoc"]
 
 [project.urls]
 Homepage = "https://github.com/GrupoCybersegurancaVirtus/cpncheck"
-Documentation = "https://grupocybersegurancavirtus.github.io/cpncheck/"
+Documentation = "https://github.com/GrupoCybersegurancaVirtus/cpncheck#readme"
+Examples = "https://github.com/GrupoCybersegurancaVirtus/cpncheck/tree/main/examples"
 Changelog = "https://github.com/GrupoCybersegurancaVirtus/cpncheck/blob/main/CHANGELOG.md"
 Issues = "https://github.com/GrupoCybersegurancaVirtus/cpncheck/issues"
 

@@ -210,3 +210,38 @@ def test_parse_combination(text, expected):
 def test_parse_combination_errors(text):
     with pytest.raises(ValueError):
         parse_combination(text)
+
+
+# Test that the report renders every shape of combination.
+@pytest.mark.parametrize("net, combo, kw, expected", [
+    ("workers", "sweep+stubborn", {"progress": "tokens(Done)"},
+     "sweep(s) over deadlock successors"),
+    ("workers", "stubborn+symmetry", {"symmetry": "WORKER=all"},
+     "deadlock graph 13 markings"),
+    ("timed_jobs", "stubborn+equivalence", {}, "stubborn sets dropped"),
+])
+def test_report_renders(net, combo, kw, expected):
+    result = check_cpn(os.path.join(NETS, f"{net}.cpn"), reduction=combo, **kw)
+    text = result.report()
+    assert f"reduction        : {combo}" in text or \
+        "reduction        : stubborn+sweep" in text
+    assert expected in text
+
+
+# Test the command line with a combination.
+def test_command_line():
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-m", "cpncheck.cli", "check",
+         os.path.join(NETS, "workers.cpn"), "--reduction", "sweep+stubborn",
+         "--progress", "tokens(Done)", "--prop", "EF dead"],
+        capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "stubborn+sweep" in out.stdout
+    bad = subprocess.run(
+        [sys.executable, "-m", "cpncheck.cli", "check",
+         os.path.join(NETS, "workers.cpn"), "--reduction", "sweep+magic"],
+        capture_output=True, text=True)
+    assert bad.returncode != 0 and "magic" in bad.stderr
