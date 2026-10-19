@@ -1,6 +1,6 @@
 # Roadmap: a model checker for any `.cpn`
 
-CPNCheck was extracted from pyruleanalyzer (see [MIGRATION.md](MIGRATION.md)).
+CPNCheck was extracted from pyruleanalyzer (see [docs/history](docs/history/extraction-from-pyruleanalyzer.md)).
 The goal now is a tool that model checks the `.cpn` files CPN Tools itself can
 analyse, whatever they model, with pyruleanalyzer as one client among others.
 

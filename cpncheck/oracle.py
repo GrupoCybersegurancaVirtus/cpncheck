@@ -172,6 +172,10 @@ class CPNToolsOracle:
                  cache_dir: Optional[str] = None):
         """Find CPN Tools, the Access/CPN libraries and a Nashorn launcher.
 
+        Each location may also be given in the environment:
+        ``CPNCHECK_CPNTOOLS_DIR``, ``CPNCHECK_CPNIDE_JAR``, ``CPNCHECK_JJS``,
+        ``CPNCHECK_ORACLE_CACHE``.
+
         Args:
             cpntools_dir (str, optional): CPN Tools installation directory.
             backend_jar (str, optional): The CPN IDE backend jar, which bundles
@@ -180,8 +184,13 @@ class CPNToolsOracle:
             cache_dir (str, optional): Where the libraries and the simulator
                 are staged (defaults to a folder in the user's cache).
         """
-        pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+        env = os.environ.get
+        pf86 = env("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        pf = env("ProgramFiles", r"C:\Program Files")
+        cpntools_dir = cpntools_dir or env("CPNCHECK_CPNTOOLS_DIR")
+        backend_jar = backend_jar or env("CPNCHECK_CPNIDE_JAR")
+        jjs = jjs or env("CPNCHECK_JJS")
+        cache_dir = cache_dir or env("CPNCHECK_ORACLE_CACHE")
         self.cpntools_dir = cpntools_dir or os.path.join(pf86, "CPN Tools")
         self.backend_jar = backend_jar or next(iter(sorted(glob.glob(os.path.join(
             pf86, "CPN IDE", "resources", "backend", "cpn-ide-back-*.jar")) + glob.glob(
@@ -193,7 +202,7 @@ class CPNToolsOracle:
             pf, "Java", "jdk1.8*", "bin", "jjs.exe")))), None)
         base = cache_dir or os.path.join(
             os.environ.get("LOCALAPPDATA", tempfile.gettempdir()),
-            "pyruleanalyzer", "cpntools-oracle")
+            "cpncheck", "cpntools-oracle")
         self.cache_dir = base
         self.lib_dir = os.path.join(base, "lib")
         self.tmp_dir = os.path.join(base, "tmp")
@@ -227,6 +236,9 @@ class CPNToolsOracle:
             list: Human-readable names, empty when everything is present.
         """
         out = []
+        if os.name != "nt":
+            # CPN Tools 4.0.1's simulator is a Cygwin binary.
+            return ["Windows (the CPN Tools 4.0.1 simulator runs there only)"]
         if not os.path.isfile(os.path.join(self.cpnsim, "cpn.ML.x86-cygwin")):
             out.append(f"CPN Tools simulator in {self.cpnsim}")
         if not os.path.isdir(os.path.join(self.cpnsim, "statespacefiles")):

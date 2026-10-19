@@ -4,27 +4,43 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpncheck"
-version = "0.1.0.dev0"
+version = "0.2.0"
 description = "Model checking for Coloured Petri Nets, cross-checked against CPN Tools"
 authors = [{ name = "GrupoCybersegurancaVirtus" }]
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+# The table form: the string form (PEP 639) needs a setuptools that no longer
+# supports Python 3.8.
+license = { text = "MIT" }
 requires-python = ">= 3.8"
 dependencies = []
+keywords = ["petri nets", "coloured petri nets", "CPN Tools", "model checking",
+            "CTL", "state space", "formal verification"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Testing",
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
+docs = ["pdoc"]
 
 [project.urls]
 Homepage = "https://github.com/GrupoCybersegurancaVirtus/cpncheck"
+Documentation = "https://grupocybersegurancavirtus.github.io/cpncheck/"
+Changelog = "https://github.com/GrupoCybersegurancaVirtus/cpncheck/blob/main/CHANGELOG.md"
 Issues = "https://github.com/GrupoCybersegurancaVirtus/cpncheck/issues"
 
 [project.scripts]

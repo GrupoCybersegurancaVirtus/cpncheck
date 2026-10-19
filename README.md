@@ -14,8 +14,16 @@ Zero dependencies: the Python standard library is enough.
 ## Install
 
 ```bash
-pip install -e .
+pip install cpncheck                                              # from PyPI
+pip install git+https://github.com/GrupoCybersegurancaVirtus/cpncheck  # latest
+pip install -e ".[test]"                                          # a checkout
 ```
+
+Python 3.8 or later, on Linux, macOS or Windows. CPN Tools is *not* needed;
+it is used only by the optional cross-check (`cpncheck oracle`, Windows).
+The API reference is at
+<https://grupocybersegurancavirtus.github.io/cpncheck/>; the
+[examples](examples/) are a guided tour.
 
 ## Use
 
@@ -428,9 +436,12 @@ Pre-release, extracted from
 [pyruleanalyzer](https://github.com/GrupoCybersegurancaVirtus/pyruleanalyzer),
 which now uses it through the plugin above.
 
-Agreement with CPN Tools is measured, not assumed: 28 nets — two correct ones
-and every mutant of each — agree on every statistic and every verdict, with 81
-*false* verdicts confirmed by CPN Tools itself. See [MIGRATION.md](MIGRATION.md)
-for what remains.
+Agreement with CPN Tools is measured, not assumed: the CPN Tools samples, a
+corpus of 48 nets other people wrote ([tests/corpus](tests/corpus/RESULTS.md)),
+the constructs whose meaning was measured in CPN Tools (`tests/nets/features`)
+and 236 expressions of the CPN ML library (`tests/data/mllib_cases.txt`) are
+all compared with CPN Tools itself. [ROADMAP.md](ROADMAP.md) says what is
+supported and what remains; [docs/history](docs/history/extraction-from-pyruleanalyzer.md)
+how CPNCheck came out of pyruleanalyzer.
 
 MIT licensed.
