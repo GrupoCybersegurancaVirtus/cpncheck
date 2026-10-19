@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+* The report of a combined reduction no longer fails: `cpncheck check
+  --reduction stubborn+symmetry` (and every other combination) raised
+  `KeyError` when printing it.
+* A README for PyPI: absolute links, a five-minute tour and figures drawn
+  from real runs (`docs/figures/make_figures.py`).
+* The Documentation link points to the README.
+
 ## 0.2.0
 
 The first release as a model checker for any `.cpn`, independent of

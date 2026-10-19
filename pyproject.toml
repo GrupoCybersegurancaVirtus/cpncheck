@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpncheck"
-version = "0.2.0"
+version = "0.2.1"
 description = "Model checking for Coloured Petri Nets, cross-checked against CPN Tools"
 authors = [{ name = "GrupoCybersegurancaVirtus" }]
 readme = "README.md"

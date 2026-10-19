@@ -501,7 +501,7 @@ composition, with SML's precedences.
 
 ## Status
 
-Version 0.2.0. Extracted from
+Version 0.2.1. Extracted from
 [pyruleanalyzer](https://github.com/GrupoCybersegurancaVirtus/pyruleanalyzer),
 which now uses it through the plugin above
 ([history](https://github.com/GrupoCybersegurancaVirtus/cpncheck/blob/main/docs/history/extraction-from-pyruleanalyzer.md)).
