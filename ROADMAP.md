@@ -223,6 +223,13 @@ After that, on the same footing:
   are still growing -- the book's protocols, whose network places have no
   bound. CPN Tools refuses `Pn model one` itself (a place named `20` has no
   ML name), so it has no oracle verdict.
+* **Combined reductions** (`cpncheck/combined.py`): `equivalence+symmetry`
+  as one composed canonical form; stubborn `deadlock`/`safety` graphs on
+  class representatives; the sweep over representatives and over stubborn
+  successors. The `stutter` graph is not combined (its cycle proviso lives
+  on the search stack). Validated against the full graph on the example
+  nets and on every explored corpus net.
+* **Default budget 1 000 000 markings.**
 * **Exploration about 40% faster** on timed nets (token counts once per
   marking, timestamps cached), with identical graphs.
 

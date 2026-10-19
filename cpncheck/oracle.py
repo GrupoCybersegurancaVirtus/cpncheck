@@ -402,7 +402,7 @@ STATE_SPACE_QUERIES = {
 
 # Function to compare the occurrence graph of any net with CPN Tools'.
 def compare_state_space(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
-                        max_nodes: int = 200_000,
+                        max_nodes: Optional[int] = None,
                         timeout: int = 1800,
                         compat: Optional[str] = None) -> Dict[str, object]:
     """Build the occurrence graph in both engines and compare its statistics.
@@ -414,7 +414,8 @@ def compare_state_space(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
     Args:
         cpn_path (str): The ``.cpn`` file.
         oracle (CPNToolsOracle, optional): The oracle; created when omitted.
-        max_nodes (int): Budget for CPNCheck's graph.
+        max_nodes (int, optional): Budget for CPNCheck's graph; the default
+            is :data:`cpncheck.statespace.DEFAULT_MAX_NODES`.
         timeout (int): Seconds allowed for CPN Tools.
         compat (str, optional): Passed to :class:`ColouredNet`. A timed net
             needs ``"cpntools-4.0.1"`` to be comparable: that version's state
@@ -430,10 +431,10 @@ def compare_state_space(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
     """
     from .coloured import ColouredNet
     from .net import CPNNet
-    from .statespace import build_state_space
+    from .statespace import DEFAULT_MAX_NODES, build_state_space
 
     ss = build_state_space(ColouredNet(CPNNet(cpn_path), compat=compat),
-                           max_nodes)
+                           DEFAULT_MAX_NODES if max_nodes is None else max_nodes)
     mine = {"nodes": ss.n_nodes, "arcs": ss.n_arcs, "scc_nodes": ss.n_sccs,
             "scc_arcs": ss.n_scc_arcs, "dead": len(ss.dead),
             "home": len(ss.home)}

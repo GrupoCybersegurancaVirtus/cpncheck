@@ -66,6 +66,7 @@ __all__ = [
     "ReducedChecker",
     "build_reduced",
     "classify",
+    "stubborn_choice",
     "split",
 ]
 
@@ -677,6 +678,48 @@ def _enabled(net: ColouredNet, dep: Dependency, marking: tuple,
     return out
 
 
+# Function to choose the binding elements a stubborn set expands.
+def stubborn_choice(dep: Dependency, kind: str, atoms: Optional[_Atoms],
+                    invariant: Optional[Formula], marking: tuple,
+                    en: List[Tuple[int, tuple, dict]]
+                    ) -> List[Tuple[int, tuple, dict]]:
+    """The enabled binding elements of a ``deadlock`` or ``safety`` stubborn set.
+
+    The choice depends on the marking alone, so the reduced successor
+    relation is a fixed relation: any search of it -- breadth-first here,
+    the sweep-line method in :mod:`cpncheck.sweepline` -- reaches the same
+    markings.
+
+    Args:
+        dep (Dependency): The net's relations.
+        kind (str): ``deadlock`` or ``safety``.
+        atoms (_Atoms, optional): Proposition evaluator (``safety``).
+        invariant (Formula, optional): The invariant (``safety``).
+        marking (tuple): The marking.
+        en (list): Its enabled binding elements.
+
+    Returns:
+        list: The ones to fire; all of them when the set is everything.
+    """
+    if not en:
+        return en
+    counts = collections.Counter(e[0] for e in en)
+    chooser = _Chooser(dep, marking, counts)
+    if kind == "deadlock":
+        chosen = chooser.smallest()
+    elif kind == "safety":
+        required: Iterable[int] = ()
+        if atoms.holds(invariant, marking, counts):
+            up = atoms.flip(invariant, marking, counts)
+            required = up if up is not None else set(counts)
+        chosen = chooser.smallest(required)
+    else:
+        raise ValueError(f"no stubborn choice for kind {kind!r}")
+    if chooser.size(chosen) == len(en):
+        return en
+    return [e for e in en if e[0] in chosen]
+
+
 # Function to explore the reduced occurrence graph of one kind.
 def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
                   atoms: Optional[_Atoms] = None,
@@ -684,7 +727,8 @@ def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
                   visible: FrozenSet[int] = frozenset(),
                   initial: Optional[tuple] = None,
                   max_nodes: int = DEFAULT_MAX_NODES,
-                  cache: Optional[Dict[tuple, list]] = None) -> StateSpace:
+                  cache: Optional[Dict[tuple, list]] = None,
+                  canonical=None) -> StateSpace:
     """Explore the markings a stubborn-set search reaches.
 
     ``deadlock`` and ``safety`` graphs are searched breadth-first, so their
@@ -704,6 +748,11 @@ def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
         cache (dict, optional): Enabled binding elements per marking, shared
             between the graphs of one initial marking, which mostly visit the
             same markings in different orders.
+        canonical (callable, optional): A canonical form
+            (:mod:`cpncheck.equivalence`): every marking reached is replaced
+            by the representative of its class, so the graph is a reduced
+            quotient. Only for ``deadlock`` and ``safety``: the cycle proviso
+            of ``stutter`` is not known to survive the quotient.
 
     Returns:
         StateSpace: The reduced graph; ``enabled`` holds, per node, every
@@ -711,8 +760,13 @@ def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
     """
     if kind not in ("deadlock", "safety", "stutter"):
         raise ValueError(f"unknown reduction kind {kind!r}")
+    if canonical is not None and kind == "stutter":
+        raise ValueError("a stutter graph cannot be combined with an "
+                         "equivalence")
     t0 = time.perf_counter()
     start = net.initial if initial is None else initial
+    if canonical is not None:
+        start = canonical(start)
     nodes = {start: 0}
     markings = [start]
     succ: List[List[Tuple[int, tuple, int]]] = [[]]
@@ -729,31 +783,30 @@ def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
         m = markings[v]
         en = cache.get(m) if cache is not None else None
         if en is None:
-            en = _enabled(net, dep, m, prev, fired)
+            # A representative is not the marking the occurrence produced,
+            # so the predecessor's bindings say nothing about it.
+            en = (net.enabled(m) if canonical is not None
+                  else _enabled(net, dep, m, prev, fired))
             if cache is not None and len(cache) < _CACHE_LIMIT:
                 cache[m] = en
         enabled_rec[v] = tuple(e[0] for e in en)
         if not en:
             return en, []
+        if kind in ("deadlock", "safety"):
+            fire = stubborn_choice(dep, kind, atoms, invariant, m, en)
+            if len(fire) == len(en):
+                expanded_fully += 1
+            return en, fire
         counts = collections.Counter(e[0] for e in en)
         chooser = _Chooser(dep, m, counts)
         chosen: Optional[Set[int]] = None
-        if kind == "deadlock":
-            chosen = chooser.smallest()
-        elif kind == "safety":
-            required: Iterable[int] = ()
-            if atoms.holds(invariant, m, counts):
-                up = atoms.flip(invariant, m, counts)
-                required = up if up is not None else set(counts)
-            chosen = chooser.smallest(required)
-        else:
-            t = chooser.singleton(visible)
-            if t is not None:
-                ti, key, env = next(e for e in en if e[0] == t)
-                nxt = net.fire(m, ti, env)
-                dst = nodes.get(nxt)
-                if dst is None or not on_stack[dst]:
-                    chosen = {t}
+        t = chooser.singleton(visible)
+        if t is not None:
+            ti, key, env = next(e for e in en if e[0] == t)
+            nxt = net.fire(m, ti, env)
+            dst = nodes.get(nxt)
+            if dst is None or not on_stack[dst]:
+                chosen = {t}
         if chosen is None or chooser.size(chosen) == len(en):
             expanded_fully += 1
             return en, en
@@ -763,6 +816,8 @@ def build_reduced(net: ColouredNet, dep: Dependency, kind: str,
     def visit(src, en, ti, key, env):
         nonlocal complete
         nxt = net.fire(markings[src], ti, env)
+        if canonical is not None:
+            nxt = canonical(nxt)
         dst = nodes.get(nxt)
         new = False
         if dst is None:

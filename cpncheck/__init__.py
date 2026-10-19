@@ -20,6 +20,7 @@ Layers, bottom up:
 :mod:`cpncheck.sweepline`     the generalised sweep-line method
 :mod:`cpncheck.equivalence`   quotient graphs; time equivalence
 :mod:`cpncheck.symmetry`      symmetry reduction
+:mod:`cpncheck.combined`      several reductions at once
 :mod:`cpncheck.query`         user properties written as text
 :mod:`cpncheck.askctl_input`  ASK-CTL query files, with ASKCTL.sml's semantics
 :mod:`cpncheck.ctl`           CTL fixpoints over the occurrence graph

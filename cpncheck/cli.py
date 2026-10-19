@@ -192,6 +192,31 @@ def _cmd_oracle(args):
     return 0 if report["agree"] else 1
 
 
+# Function to validate a --reduction value.
+def _reduction(text: str) -> str:
+    """Accept one reduction or several joined with ``+``.
+
+    Args:
+        text (str): The option's value.
+
+    Returns:
+        str: The value.
+
+    Raises:
+        argparse.ArgumentTypeError: For an unknown name.
+    """
+    from .combined import COMPONENTS, parse_combination
+
+    try:
+        parse_combination(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+    if "+" not in text and text not in COMPONENTS:
+        raise argparse.ArgumentTypeError(
+            f"unknown reduction {text!r}; use {', '.join(COMPONENTS)}")
+    return text
+
+
 # Function to build the argument parser.
 def build_parser():
     """Assemble the command line parser.
@@ -211,13 +236,14 @@ def build_parser():
                    help="a setting for the net's profile, e.g. "
                         "class_labels=0,1,2; repeatable")
     p.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
-    p.add_argument("--reduction",
-                   choices=["stubborn", "sweep", "equivalence", "symmetry"],
-                   default=None,
+    p.add_argument("--reduction", type=_reduction, default=None,
+                   metavar="KIND[+KIND...]",
                    help="stubborn: stubborn-set reduced graphs; sweep: the "
                         "sweep-line method (properties of single markings); "
                         "equivalence: the quotient by time equivalence "
-                        "(timed nets); symmetry: the quotient by --symmetry")
+                        "(timed nets); symmetry: the quotient by --symmetry; "
+                        "several joined with '+' combine, e.g. "
+                        "stubborn+symmetry or sweep+stubborn")
     p.add_argument("--equivalence", choices=["time"], default=None,
                    help="the equivalence of --reduction equivalence")
     p.add_argument("--symmetry", action="append", metavar="SETS=KIND",

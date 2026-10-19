@@ -47,6 +47,13 @@ for r in result.failures:
     print(r.id, r.detail)        # the counterexample, rendered
 ```
 
+**Budget.** Up to 1 000 000 markings are explored by default
+(`--max-nodes`, `max_nodes=`); beyond it the state-space properties get no
+verdict rather than a guess. That much costs memory: the Coloured Petri Nets
+book's queue protocol, cut off at a million markings (5.6 million arcs),
+took 279 s and 3.9 GiB. Lower the budget on a small machine, or use a
+reduction.
+
 `ModelCheckResult` exposes `passed`, `failures`, `skipped`, `properties`,
 `stats`, `oracle`, `report_data`, `report()`, `to_dict()`, `latex_rows()` and
 `latex_table()`.
@@ -307,6 +314,44 @@ statistics. `tests/test_equivalence.py` compares every verdict with the full
 graph, and checks that a symmetry the net does not have, an equivalence that
 merges different behaviours, and a property naming a permuted value all end
 without a verdict rather than with a wrong one.
+
+## State explosion: combining reductions
+
+The reductions act on different things -- which successors are explored,
+which markings are kept, which markings are told apart -- so they compose:
+
+```bash
+cpncheck check Workers.cpn --reduction stubborn+symmetry --symmetry WORKER=all
+cpncheck check Pipelines.cpn --reduction sweep+stubborn --progress 'tokens("Done 1")'
+cpncheck check Loop.cpn --reduction equivalence+symmetry --symmetry TOKEN=all
+```
+
+| Combination | What it decides |
+|---|---|
+| `equivalence+symmetry` | One quotient by the equivalence both generate: symmetry representative of the time representative. Time and symmetry commute, so the composition is a canonical form. Everything a quotient decides. |
+| `stubborn` + a quotient | `deadlock` and `safety` stubborn graphs explored on class representatives; other properties on the plain quotient. |
+| `sweep` + a quotient | The sweep over representatives: `AG psi`, `EF chi`, `!EF chi` the equivalence does not observe. |
+| `sweep+stubborn` (+ a quotient) | The sweep over the `deadlock` or `safety` stubborn graph of each part: a stubborn choice depends on the marking alone, so the sweep reaches every marking of the reduced graph, dead ones and invariant violations included. |
+
+The `stutter` stubborn graph is not combined: its cycle proviso is stated on
+the search stack, which neither a quotient nor the sweep keeps. Where
+stubborn sets do not apply (a global clock, priorities, inhibitor or reset
+arcs, source transitions) they are dropped with a warning and the rest of the
+combination still runs. Nothing combined decides the home-marking property.
+
+| `AG !dead` on | full | alone | combined |
+|---|---|---|---|
+| 6 identical workers | 729 | stubborn 127, symmetry 28 | `stubborn+symmetry`: 13 |
+| 6 identical workers | 729 | sweep stores 433 at once | `sweep+stubborn+symmetry`: 8 stored at once |
+| 8 independent pipelines | 6 561 | stubborn 17 | `sweep+stubborn`: 16 stored at once |
+| symmetric timed loop | infinite | time 7 classes | `equivalence+symmetry`: 5 |
+
+`tests/test_combined.py` compares every combination with the full graph on
+properties of every kind, and checks that each one decides what it claims
+to; on the corpus nets, `sweep+stubborn` with a deliberately bad progress
+measure (`hash(m) % 7`, regress arcs everywhere) agrees with the full graph
+on every net. The composed consistency test still refuses a net that is not
+symmetric (`timed_loop`, whose delay depends on the token).
 
 ## Two claims, and how they are held up
 

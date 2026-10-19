@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .coloured import ColouredNet
 
 #: Maximum number of markings explored before giving up on a state space.
-DEFAULT_MAX_NODES = 200_000
+DEFAULT_MAX_NODES = 1_000_000
 
 __all__ = ["StateSpace", "build_state_space", "DEFAULT_MAX_NODES"]
 

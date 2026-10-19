@@ -34,6 +34,10 @@ pyruleanalyzer (see [ROADMAP.md](ROADMAP.md) for the phases).
 * State-space reduction: stubborn sets, generalised sweep-line, time
   equivalence and user equivalences, symmetry -- each declares what it
   preserves and is validated against the full graph.
+* Combined reductions (`--reduction stubborn+symmetry`, `sweep+stubborn`,
+  `equivalence+symmetry`, ...): each property is decided by what every
+  part preserves; the rest gets no verdict, with the reason.
+* The default budget is 1 000 000 markings (was 200 000).
 * Profiles as plugins (entry point `cpncheck.profiles`), with options,
   inputs, conformance tests and mutation operators.
 

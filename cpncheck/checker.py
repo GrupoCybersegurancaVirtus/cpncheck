@@ -572,6 +572,55 @@ class CPNModelChecker:
         stats["reduction"] = "symmetry" if symmetry is not None else "equivalence"
         return res, stats
 
+    # Method to evaluate the properties under a combination of reductions.
+    def _evaluate_combined(self, sample, components, progress=None,
+                           equivalence=None, symmetry=None
+                           ) -> Tuple[Dict[str, PropertyResult], Dict[str, Any]]:
+        """Decide the properties of one input under combined reductions.
+
+        Args:
+            sample (optional): The input, or None for the file's own marking.
+            components (tuple): From :func:`cpncheck.combined.parse_combination`.
+            progress (optional): The sweep's measure.
+            equivalence (optional): For the equivalence component.
+            symmetry (optional): For the symmetry component.
+
+        Returns:
+            tuple: ``({id: PropertyResult}, statistics)``.
+        """
+        from .combined import CombinedChecker
+
+        initial = None
+        if sample is not None:
+            initial = self.cnet.initial_marking(self.as_sample(sample),
+                                                places=self.input_places)
+        cc = CombinedChecker(self.cnet, components, self.groups,
+                             initial=initial, max_nodes=self.max_nodes,
+                             progress=progress, equivalence=equivalence,
+                             symmetry=symmetry)
+        t0 = time.perf_counter()
+        verdicts = cc.decide_all(self.formulas)
+        elapsed = time.perf_counter() - t0
+        res: Dict[str, PropertyResult] = {}
+        for pid, (holds, cex, how) in verdicts.items():
+            if cex is not None:
+                cex.input = sample
+                cex.data["input_places"] = self.input_places
+            detail = str(cex) if cex is not None else how
+            if holds is not None and cc.eq is not None and not cc.eq.exact:
+                detail = (detail + "; " if detail else "") +                     f"conditional on {cc.eq.name}"
+            res[pid] = PropertyResult(pid, holds, detail, elapsed,
+                                      spec=self.catalog.get(pid), cex=cex)
+        for pid, reason in self.unavailable.items():
+            res[pid] = PropertyResult(pid, None, reason,
+                                      spec=self.catalog.get(pid))
+        for pid in self.scc_props:
+            res[pid] = PropertyResult(
+                pid, None, f"not preserved by {cc.name} (a home marking needs "
+                "the full graph's terminal components)",
+                spec=self.catalog.get(pid))
+        return res, cc.stats()
+
     # Method to decide the home-marking property with the reduced graphs.
     def _home_reduced(self, rc: ReducedChecker, pid: str, sample,
                       plans: Dict[str, str]) -> PropertyResult:
@@ -664,6 +713,11 @@ class CPNModelChecker:
                 sets to permute, e.g. ``{"PH,CS": "rotation"}``
                 (:mod:`cpncheck.symmetry`).
 
+        A combination of reductions is named with ``+``, e.g.
+        ``"stubborn+symmetry"`` or ``"sweep+stubborn+equivalence"``; each
+        property is decided by what all of them preserve
+        (:mod:`cpncheck.combined`).
+
         Returns:
             ModelCheckResult: Verdicts, statistics and the expected CPN Tools
             values.
@@ -674,8 +728,14 @@ class CPNModelChecker:
         t0 = time.time()
         if options:
             self.options.update(options)
-        if reduction not in REDUCTIONS:
-            raise ValueError(f"reduction must be one of {REDUCTIONS}, "
+        from .combined import parse_combination
+
+        combination = parse_combination(reduction)
+        if combination is None and not isinstance(reduction, (str, type(None))):
+            reduction = next(iter(reduction), None)
+        if combination is None and reduction not in REDUCTIONS:
+            raise ValueError(f"reduction must be one of {REDUCTIONS}, or "
+                             "several joined with '+', "
                              f"not {reduction!r}")
         if max_nodes is not None:
             self.max_nodes = int(max_nodes)
@@ -689,6 +749,17 @@ class CPNModelChecker:
         for i, x in enumerate(xs):
             if verbose:
                 print(f"  [mc] input {i + 1}/{len(xs)}")
+            if combination is not None:
+                part, rstats = self._evaluate_combined(
+                    x, combination, progress, equivalence, symmetry)
+                if not rstats.get("complete", True):
+                    warnings.append(f"a {rstats['reduction']} exploration "
+                                    f"exceeded {self.max_nodes} markings: the "
+                                    "properties it decides have no verdict")
+                warnings.extend(rstats.get("notes", []))
+                stats = stats or rstats
+                self._merge(merged, part)
+                continue
             if reduction in ("equivalence", "symmetry"):
                 if reduction == "symmetry" and symmetry is None:
                     raise ValueError("reduction='symmetry' needs symmetry=, "

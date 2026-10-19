@@ -38,10 +38,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .coloured import ColouredNet
 from .cpnml import TimedToken, sort_tokens
 from .formula import Context, Formula
-from .statespace import StateSpace
+from .statespace import DEFAULT_MAX_NODES, StateSpace
 
 __all__ = ["Equivalence", "time_equivalence", "build_quotient",
-           "ConsistencyReport", "EquivalenceError", "user_equivalence"]
+           "ConsistencyReport", "EquivalenceError", "user_equivalence",
+           "compose", "check_consistency"]
 
 
 # Class signalling an equivalence that cannot be used.
@@ -168,6 +169,38 @@ def user_equivalence(canonical: Callable[[tuple], tuple],
                             "sampled markings, not proved")
 
 
+# Function to combine two equivalences into the one they generate.
+def compose(first: Equivalence, second: Equivalence) -> Equivalence:
+    """Markings related by either equivalence, or a chain of both, are one class.
+
+    ``second.canonical(first.canonical(m))`` is a canonical form of the
+    generated equivalence when the two *commute*: when applying ``second``'s
+    moves to ``first``'s representative gives the representative of the moved
+    marking. Time equivalence and symmetry do (one shifts timestamps, the
+    other permutes colours), so their composition is exact when both are. A
+    user canonical form is not known to commute with anything; the
+    composition then inherits its conditional status and is tested like it.
+
+    Args:
+        first (Equivalence): Applied first (e.g. time).
+        second (Equivalence): Applied to its representative (e.g. symmetry).
+
+    Returns:
+        Equivalence: The composition; it observes what either observes.
+    """
+    def canonical(marking: tuple) -> tuple:
+        return second.canonical(first.canonical(marking))
+
+    def observes(formula: Formula) -> Optional[str]:
+        return first.observes(formula) or second.observes(formula)
+
+    return Equivalence(
+        f"{first.name}+{second.name}", canonical,
+        exact=first.exact and second.exact,
+        note=f"{first.name} then {second.name}: {first.note}; {second.note}",
+        observes=observes, checks=first.checks + second.checks)
+
+
 # Class reporting the consistency test.
 class ConsistencyReport:
     """What the consistency test of a quotient found.
@@ -235,8 +268,52 @@ def _successor_classes(net: ColouredNet, eq: Equivalence, marking: tuple
                      for ti, _key, env in net.enabled(marking))
 
 
+# Function to test an equivalence on the markings of a graph.
+def check_consistency(net: ColouredNet, eq: Equivalence, markings,
+                     limit: int = 300) -> ConsistencyReport:
+    """The consistency test of :func:`build_quotient`, on any explored markings.
+
+    For each successor of a representative that is not itself canonical, the
+    classes it reaches in one step must be those its representative reaches;
+    then the equivalence's own checks run on every representative.
+
+    Args:
+        net (ColouredNet): The net.
+        eq (Equivalence): The equivalence.
+        markings (sequence): Representatives that were explored.
+        limit (int): Successor markings tested at most.
+
+    Returns:
+        ConsistencyReport: The outcome.
+    """
+    report = ConsistencyReport(eq.exact)
+    tested = 0
+    for m in markings:
+        if tested >= limit:
+            break
+        for ti, _key, env in net.enabled(m):
+            concrete = net.fire(m, ti, env)
+            rep = eq.canonical(concrete)
+            if rep == concrete:
+                continue
+            tested += 1
+            report.tested += 1
+            if _successor_classes(net, eq, concrete) !=                     _successor_classes(net, eq, rep)                     and len(report.violations) < 5:
+                report.violations.append(
+                    "a marking and its representative reach different classes")
+            if tested >= limit:
+                break
+    for check in eq.checks:
+        for m in markings:
+            message = check(net, m)
+            report.tested += 1
+            if message and len(report.violations) < 5:
+                report.violations.append(message)
+    return report
+
+
 # Function to explore the quotient graph.
-def build_quotient(net: ColouredNet, eq: Equivalence, max_nodes: int = 200_000,
+def build_quotient(net: ColouredNet, eq: Equivalence, max_nodes: int = DEFAULT_MAX_NODES,
                    initial: Optional[tuple] = None, checks: int = 300
                    ) -> Tuple[StateSpace, ConsistencyReport]:
     """Explore one representative per class.
@@ -320,7 +397,7 @@ class QuotientChecker:
 
     # Method to build the quotient.
     def __init__(self, net: ColouredNet, eq: Equivalence, groups=None,
-                 initial: Optional[tuple] = None, max_nodes: int = 200_000):
+                 initial: Optional[tuple] = None, max_nodes: int = DEFAULT_MAX_NODES):
         """Create the checker and explore the quotient.
 
         Args:

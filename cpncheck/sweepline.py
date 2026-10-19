@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from .coloured import ColouredNet
 from .formula import AG, EF, Context, Formula, Not
 from .reduction import Dependency, _Atoms, propositional, split
+from .statespace import DEFAULT_MAX_NODES
 
 __all__ = ["ProgressMeasure", "parse_progress", "SweepResult", "sweep",
            "SweepChecker", "ProgressError"]
@@ -205,9 +206,10 @@ class SweepResult:
 # Function to explore a net with the generalised sweep-line method.
 def sweep(net: ColouredNet, progress: ProgressMeasure,
           predicates: Sequence[Callable[[tuple, Dict[int, int]], bool]] = (),
-          initial: Optional[tuple] = None, max_stored: int = 200_000,
+          initial: Optional[tuple] = None, max_stored: int = DEFAULT_MAX_NODES,
           max_explored: Optional[int] = None, stop_when_all_found: bool = False,
-          max_dead: int = 10_000) -> SweepResult:
+          max_dead: int = 10_000, successors=None,
+          canonical=None) -> SweepResult:
     """Explore every reachable marking, keeping only a moving window of them.
 
     Args:
@@ -222,6 +224,13 @@ def sweep(net: ColouredNet, progress: ProgressMeasure,
         stop_when_all_found (bool): Stop as soon as every predicate held
             somewhere (the verdicts are then known).
         max_dead (int): Dead markings remembered.
+        successors (callable, optional): ``successors(marking, enabled) ->
+            binding elements to fire``; a stubborn choice
+            (:func:`cpncheck.reduction.stubborn_choice`) explores the reduced
+            graph. Every enabled one by default.
+        canonical (callable, optional): A canonical form: each marking
+            reached is replaced by its class representative
+            (:mod:`cpncheck.equivalence`).
 
     Returns:
         SweepResult: The outcome.
@@ -230,6 +239,8 @@ def sweep(net: ColouredNet, progress: ProgressMeasure,
     if max_explored is None:
         max_explored = 50 * max_stored
     start = net.initial if initial is None else initial
+    if canonical is not None:
+        start = canonical(start)
     persistent = {start}
     unexplored = [start]
     found: Dict[int, tuple] = {}
@@ -271,8 +282,11 @@ def sweep(net: ColouredNet, progress: ProgressMeasure,
                 complete = False
                 heap = []
                 break
-            for ti, _k, env in enabled:
+            fire = enabled if successors is None else successors(m, enabled)
+            for ti, _k, env in fire:
                 nxt = net.fire(m, ti, env)
+                if canonical is not None:
+                    nxt = canonical(nxt)
                 if nxt in persistent:
                     continue
                 q = progress(nxt)
@@ -336,7 +350,7 @@ class SweepChecker:
 
     # Method to set up the checker.
     def __init__(self, net: ColouredNet, progress: ProgressMeasure, groups=None,
-                 initial: Optional[tuple] = None, max_nodes: int = 200_000):
+                 initial: Optional[tuple] = None, max_nodes: int = DEFAULT_MAX_NODES):
         """Create the checker.
 
         Args:
