@@ -75,7 +75,8 @@ class CPNModelChecker:
                  profile: Optional[Profile] = None,
                  prelude: Optional[Dict[str, Any]] = None,
                  properties=None,
-                 options: Optional[Dict[str, Any]] = None):
+                 options: Optional[Dict[str, Any]] = None,
+                 askctl=None):
         """Parse and flatten a ``.cpn`` file, then resolve its properties.
 
         Args:
@@ -95,6 +96,10 @@ class CPNModelChecker:
             options (dict, optional): Settings for the profile, whose meaning
                 is the profile's to define -- the checker only hands them on
                 (see the profile's documentation).
+            askctl (optional): ASK-CTL queries as CPN Tools takes them
+                (:mod:`cpncheck.askctl_input`): a ``.sml`` path or its text,
+                or a list of those. Each top-level ``eval_node F InitNode``
+                becomes a property.
 
         Raises:
             UnsupportedNet: When no registered profile recognises the net.
@@ -121,6 +126,7 @@ class CPNModelChecker:
         self.catalog = collections.OrderedDict(
             getattr(self.profile, "catalog", collections.OrderedDict()))
         self.user_properties = self._add_user_properties(properties)
+        self.askctl_scripts = self._add_askctl(askctl)
         self.input_places = tuple(self.profile.input_places(self.cnet))
         own = (self.cnet.initial[self.input_places[0]]
                if self.input_places else ())
@@ -167,6 +173,45 @@ class CPNModelChecker:
             self.formulas[prop.id] = parse_formula(prop.text, self.cnet)
             self.catalog[prop.id] = prop.descriptor()
         return items
+
+    # Method to read ASK-CTL query files and add their queries.
+    def _add_askctl(self, askctl) -> List[Any]:
+        """Parse the ASK-CTL files and add one property per query.
+
+        Args:
+            askctl: See :meth:`__init__`.
+
+        Returns:
+            list: The :class:`~cpncheck.askctl_input.AskCtlScript` objects.
+
+        Raises:
+            AskCtlError: On a file that does not parse, or an id clash.
+        """
+        from .askctl_input import AskCtlError, AskCtlScript
+        from .properties import Property
+
+        if not askctl:
+            return []
+        sources = [askctl] if isinstance(askctl, str) else list(askctl)
+        scripts, number = [], 1
+        for source in sources:
+            text = source
+            if "eval_node" not in source and os.path.exists(source):
+                with open(source, encoding="utf-8") as handle:
+                    text = handle.read()
+            script = AskCtlScript(text, self.cnet, first=number)
+            number += sum(1 for name, _t, _s in script.queries
+                          if re.fullmatch(r"Q\d+", name))
+            for pid, formula in script.formulas():
+                if pid in self.formulas or pid in self.catalog:
+                    raise AskCtlError(f"the ASK-CTL query {pid!r} reuses the "
+                                      "id of another property")
+                self.formulas[pid] = formula
+                self.catalog[pid] = Property(
+                    pid, formula.text[:28], formula.text, "desired", (),
+                    f"ASK-CTL query: eval_node ({formula.text}) InitNode")
+            scripts.append(script)
+        return scripts
 
     # Property listing the identifiers this checker will answer.
     @property
@@ -840,7 +885,7 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
               properties=None,
               options: Optional[Dict[str, Any]] = None,
               progress=None, equivalence=None,
-              symmetry=None) -> ModelCheckResult:
+              symmetry=None, askctl=None) -> ModelCheckResult:
     """Verify a generated ``.cpn`` model.
 
     Args:
@@ -860,13 +905,15 @@ def check_cpn(path: str, samples=None, reference=None, test_samples=None,
         progress (optional): The sweep-line progress measure.
         equivalence (optional): ``"time"`` or a canonical-form function.
         symmetry (optional): The colour sets to permute.
+        askctl (optional): ASK-CTL query files or text
+            (:mod:`cpncheck.askctl_input`).
 
     Returns:
         ModelCheckResult: Verdicts and statistics.
     """
     checker = CPNModelChecker(path, max_nodes=max_nodes, profile=profile,
                               prelude=prelude, properties=properties,
-                              options=options)
+                              options=options, askctl=askctl)
     return checker.check(samples=samples, reference=reference,
                          test_samples=test_samples,
                          verbose=verbose, reduction=reduction,

@@ -1757,7 +1757,7 @@ def match_pattern(pattern, value, env: Optional[Dict] = None,
             return None
         out = dict(env or {})
         for label, sub in pattern[1]:
-            index = _field_index(label, fields)
+            index = _record_index(value, label, fields)
             if index is None or index >= len(value):
                 return None
             out = match_pattern(sub, value[index], out, fields)
@@ -1887,6 +1887,62 @@ def _field_index(label, fields: Optional[Dict[str, int]]) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
+# Class holding a record that carries its own labels.
+class RecordValue(tuple):
+    """A record built outside the declared colour sets (a binding record).
+
+    Declared records are plain tuples in field order, located through the
+    colour sets' labels; this one knows its labels itself.
+
+    Attributes:
+        labels (tuple): The field names, in the order of the values.
+    """
+
+    labels: Tuple[str, ...] = ()
+
+    # Method to build the record.
+    def __new__(cls, labels, values):
+        """Create the record.
+
+        Args:
+            labels (sequence): Field names.
+            values (sequence): Field values, in the same order.
+
+        Returns:
+            RecordValue: The record.
+        """
+        obj = super().__new__(cls, tuple(values))
+        obj.labels = tuple(labels)
+        return obj
+
+    # Method to render the record as CPN ML.
+    def __repr__(self):
+        """Render as ``{x=1,y=2}``.
+
+        Returns:
+            str: The text.
+        """
+        return "{" + ",".join(f"{k}={v!r}" for k, v in zip(self.labels, self)) + "}"
+
+
+# Function to find a field of a record value.
+def _record_index(record, label, fields) -> Optional[int]:
+    """Position of a field, from the record's own labels when it has them.
+
+    Args:
+        record: The record value.
+        label: The field label.
+        fields (dict, optional): The colour sets' labels.
+
+    Returns:
+        int|None: The index, or None when the field is unknown.
+    """
+    labels = getattr(record, "labels", None)
+    if labels is not None:
+        return labels.index(label) if label in labels else None
+    return _field_index(label, fields)
+
+
 # Function to divide two numbers the way SML does.
 def _divide(a, b):
     """Real division, refusing division by zero.
@@ -1997,11 +2053,16 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
         return read
 
     if tag == "selector":
-        index = _field_index(tree[1], fields)
-        if index is None:
-            raise MLError(f"unknown field {tree[1]!r}: the colour sets do not "
-                          "declare it")
-        return lambda env, i=index: (lambda record: record[i])
+        label = tree[1]
+        index = _field_index(label, fields)
+
+        def select(record, label=label, index=index):
+            i = _record_index(record, label, fields)                 if isinstance(record, RecordValue) else index
+            if i is None:
+                raise MLError(f"unknown field {label!r}: the colour sets do "
+                              "not declare it")
+            return record[i]
+        return lambda env: select
 
     if tag == "raise":
         inner = compile_(tree[1])

@@ -27,6 +27,10 @@ pyruleanalyzer (see [ROADMAP.md](ROADMAP.md) for the phases).
   place bounds, impartial/fair/just transitions).
 * User properties as text (`--prop`, `--props`): CTL over named places and
   transitions; counterexamples that replay.
+* ASK-CTL query files as input (`--askctl`, `askctl=`): the SML a CPN Tools
+  user already wrote, with CPN Tools' state-space functions, evaluated with
+  ASKCTL.sml's own semantics (two sorts, rewriting, the SCC fast paths);
+  49 queries agree with CPN Tools.
 * State-space reduction: stubborn sets, generalised sweep-line, time
   equivalence and user equivalences, symmetry -- each declares what it
   preserves and is validated against the full graph.

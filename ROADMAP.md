@@ -204,6 +204,22 @@ timed nets by containment); 17 over budget (mostly protocols without a
 bound); 19 refused, each outside what an occurrence graph expresses (random
 draws, real time, side effects) or a file CPN Tools does not compile either.
 
+After that, on the same footing:
+
+* **The rest of the state-space report**: multiset bounds and impartial,
+  fair and just transitions, computed as CPN Tools does (`OGProps.sml`) and
+  compared with `UpperMultiSet`, `LowerMultiSet`, `ListImpartialTIs`,
+  `ListFairTIs` and `ListJustTIs` on the samples and the corpus.
+* **ASK-CTL queries as input** (`cpncheck/askctl_input.py`, `--askctl`): the
+  user's own `.sml`, evaluated with the semantics of the `ASKCTL.sml` CPN
+  Tools ships: formulas at nodes and at arcs, the rewriting step, and the
+  three shapes decided on the SCC graph (`POS (INV a)`, `POS (ALONG a)`,
+  `EV (INV a)`), which do not treat dead markings vacuously as the basic
+  evaluator does. 49 queries written to tell those readings apart agree
+  with CPN Tools (`tests/test_askctl_input.py`).
+* **Exploration about 40% faster** on timed nets (token counts once per
+  marking, timestamps cached), with identical graphs.
+
 ## State-space reduction (done)
 
 Every technique declares which properties it preserves; the checker uses it

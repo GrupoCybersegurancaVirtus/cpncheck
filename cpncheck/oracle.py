@@ -601,8 +601,8 @@ def compare_graph_containment(cpn_path: str,
 # Function to compare the model checker with CPN Tools on one net.
 def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
                         timeout: int = 1800, properties=None,
-                        options: Optional[Dict[str, object]] = None
-                        ) -> Dict[str, object]:
+                        options: Optional[Dict[str, object]] = None,
+                        askctl=None) -> Dict[str, object]:
     """Run both engines on a net and compare every value.
 
     Args:
@@ -611,6 +611,7 @@ def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
         timeout (int): Seconds allowed for CPN Tools.
         properties (optional): User properties, compared too.
         options (dict, optional): Settings for the net's profile.
+        askctl (optional): ASK-CTL query files or text, compared too.
 
     Returns:
         dict: ``{"net", "rows": [(key, pyra, cpntools, agree)], "agree",
@@ -620,7 +621,7 @@ def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
 
     oracle = oracle or CPNToolsOracle()
     checker = CPNModelChecker(cpn_path, properties=properties,
-                              options=options)
+                              options=options, askctl=askctl)
     result = checker.check()
     decl, queries = checker.ml_program()
     answer = oracle.run(cpn_path, decl, queries, timeout=timeout)

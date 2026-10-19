@@ -26,6 +26,7 @@ python examples/run_all.py 06 07 --quiet
 | [`11_askctl_and_reports.py`](11_askctl_and_reports.py) | ASK-CTL scripts for CPN Tools, JSON, LaTeX tables, comparing two versions of a net |
 | [`12_cpntools_oracle.py`](12_cpntools_oracle.py) | Cross-checking against CPN Tools: state-space statistics, every verdict, graph containment for timed nets |
 | [`13_command_line.py`](13_command_line.py) | Every `cpncheck` command and option, run on the example nets |
+| [`14_askctl_queries.py`](14_askctl_queries.py) | ASK-CTL query files as input, as written for CPN Tools; where ASK-CTL is not textbook CTL |
 | [`cpntools_samples.py`](cpntools_samples.py) | CPNCheck on the 24 models CPN Tools ships with (`--oracle` to compare each with CPN Tools) |
 
 ## The nets

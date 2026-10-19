@@ -294,7 +294,7 @@ def mentions_dead(f: Formula) -> bool:
     Returns:
         bool: True when the formula depends on deadness.
     """
-    if isinstance(f, Dead):
+    if isinstance(f, Dead) or getattr(f, "opaque", False):
         return True
     if isinstance(f, AF) and f.semantics == "askctl":
         return True

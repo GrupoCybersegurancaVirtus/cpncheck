@@ -346,6 +346,8 @@ class QuotientChecker:
             tuple: ``(holds or None, counterexample or None, reason)``.
         """
         reason = self.eq.observes(formula)
+        if getattr(formula, "opaque", False):
+            reason = "an ASK-CTL query reads the whole occurrence graph"
         if reason:
             return None, None, f"not preserved by {self.eq.name}: {reason}"
         if not self.consistency.consistent:

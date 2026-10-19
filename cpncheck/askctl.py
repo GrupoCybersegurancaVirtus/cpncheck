@@ -178,6 +178,12 @@ class MLProgram:
         """
         render = lambda x: self.render(x, ctx, semantics)   # noqa: E731
 
+        if getattr(phi, "script", None) is not None:
+            # An ASK-CTL query as the user wrote it, after its file.
+            if phi.script.declarations:
+                self.declare(phi.script.declarations)
+            return phi.text
+
         if isinstance(phi, F.Dead):
             self.declare("val DEAD = NOT(MODAL(TT));")
             return "DEAD"

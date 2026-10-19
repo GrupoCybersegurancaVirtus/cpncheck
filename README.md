@@ -76,7 +76,12 @@ cpncheck check SimpleProtocol.cpn
 | R5 | All transitions live | `forall t: AG EF EN(t)` |
 
 They are facts, printed YES/NO, and never fail a check -- a protocol meant to
-stop has dead markings and is not wrong for it.
+stop has dead markings and is not wrong for it. Below them come the integer
+and multiset bounds of every place, the dead and live transition instances and
+the fairness of each transition (impartial, fair, just). Every figure is
+compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
+`UpperInteger`, `LowerInteger`, `UpperMultiSet`, `LowerMultiSet`,
+`ListImpartialTIs`, `ListFairTIs`, `ListJustTIs`) by the oracle tests.
 
 ### Your own properties, without Python
 
@@ -101,12 +106,34 @@ value; connectives `! & | ->`; operators `AG AF EF EG`, `E[f U g]`,
 element or every element of that name. The full grammar is in
 [`cpncheck/query.py`](cpncheck/query.py); from Python, pass
 `properties=` to `check_cpn` or `CPNModelChecker`. Every user property on two
-CPN Tools samples is checked against CPN Tools' own ASK-CTL by the tests. Below them come the integer
-and multiset bounds of every place, the dead and live transition instances and
-the fairness of each transition (impartial, fair, just). Every figure is
-compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
-`UpperInteger`, `LowerInteger`, `UpperMultiSet`, `LowerMultiSet`,
-`ListImpartialTIs`, `ListFairTIs`, `ListJustTIs`) by the oracle tests.
+CPN Tools samples is checked against CPN Tools' own ASK-CTL by the tests.
+
+### ASK-CTL queries you already have
+
+A file of ASK-CTL queries, as one would evaluate it in CPN Tools after
+*Enter State Space*, is accepted as it is:
+
+```sml
+fun Eating n = Mark.Top'Eat 1 n <> empty;
+val AlwaysAgain = eval_node (INV (POS (NF ("eating", Eating)))) InitNode;
+eval_node (POS (EXIST_MODAL (AF ("put", fn a => ArcToTI a = TI.Top'Put_Down_Chopsticks 1), TT))) InitNode;
+```
+
+```bash
+cpncheck check DiningPhilosophers.cpn --askctl dining.sml
+```
+
+Every top-level `eval_node F InitNode` is a property (named after its `val`,
+or `Q1`, `Q2`, ...). The rest of the file is CPN ML, with the net's
+declarations and CPN Tools' state-space functions (`Mark`, `OutArcs`,
+`ArcToBE`, `Bind`, `TI`, `SearchNodes`, `PredAllNodes`, `ListDeadMarkings`,
+`NodesInPath`, the SCC functions, ...). The formulas mean what
+`ASKCTL.sml` makes them mean, which is not textbook CTL: `EV` holds vacuously
+at a dead marking, and `POS (INV a)`, `POS (ALONG a)` and `EV (INV a)` are
+decided on the SCC graph, where it does not. The tests hold 49 queries
+written to tell those readings apart, and all of them get CPN Tools' verdict
+([`cpncheck/askctl_input.py`](cpncheck/askctl_input.py)). From Python:
+`check_cpn(net, askctl="dining.sml")`.
 
 **Examples.** [examples/](examples/) is a guided tour, one feature per
 script, on small nets shipped with them: the quickstart, the layers under

@@ -21,6 +21,7 @@ Layers, bottom up:
 :mod:`cpncheck.equivalence`   quotient graphs; time equivalence
 :mod:`cpncheck.symmetry`      symmetry reduction
 :mod:`cpncheck.query`         user properties written as text
+:mod:`cpncheck.askctl_input`  ASK-CTL query files, with ASKCTL.sml's semantics
 :mod:`cpncheck.ctl`           CTL fixpoints over the occurrence graph
 :mod:`cpncheck.properties`    the property catalog
 :mod:`cpncheck.result`        verdicts and reports (text, JSON, LaTeX)

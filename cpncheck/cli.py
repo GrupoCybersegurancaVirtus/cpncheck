@@ -73,7 +73,8 @@ def _cmd_check(args):
                        reduction=args.reduction, properties=props or None,
                        progress=args.progress,
                        equivalence=args.equivalence,
-                       symmetry=args.symmetry)
+                       symmetry=args.symmetry,
+                       askctl=args.askctl or None)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(result.to_dict(), fh, indent=2)
@@ -231,6 +232,10 @@ def build_parser():
     p.add_argument("--prop", action="append", metavar="FORMULA",
                    help='one property, e.g. \'AG !(has(Eat, ph(1)) & '
                         'has(Eat, ph(2)))\'; repeatable')
+    p.add_argument("--askctl", action="append", metavar="FILE",
+                   help="ASK-CTL queries as CPN Tools takes them (.sml); each "
+                        "top-level eval_node F InitNode is a property; "
+                        "repeatable")
     p.add_argument("--json", help="also write the verdicts as JSON")
     p.add_argument("--latex", action="store_true", help="print a LaTeX table")
     p.add_argument("--trace", action="store_true",
