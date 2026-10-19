@@ -24,8 +24,8 @@ import functools
 import math
 from typing import Any, Callable, Dict
 
-from .cpnml import (ConValue, DataConstructor, EnumValue, MLError, MultiSet,
-                    _as_multiset)
+from .cpnml import (ConValue, DataConstructor, EnumValue, MLError, MLRaise,
+                    MultiSet, _as_multiset)
 
 __all__ = ["LIBRARY", "SYMBOLS", "sml_int", "sml_real"]
 
@@ -41,7 +41,7 @@ def _raise(name: str, why: str):
     Raises:
         MLError: Always.
     """
-    raise MLError(f"exception {name}: {why}")
+    raise MLRaise(EnumValue(name), f"exception {name}: {why}")
 
 
 # Function to write an integer as SML does.
@@ -660,6 +660,13 @@ LESS, EQUAL, GREATER = EnumValue("LESS"), EnumValue("EQUAL"), EnumValue("GREATER
 SYMBOLS: Dict[str, Any] = {"SOME": SOME, "NONE": NONE, "LESS": LESS,
                            "EQUAL": EQUAL, "GREATER": GREATER}
 
+#: SML's standard exceptions, and CPN Tools' Subtract: values a net may
+#: raise and handle.
+for _name in ("Empty", "Subscript", "Option", "Div", "Chr", "Size", "Domain",
+              "Overflow", "Match", "Bind", "Subtract"):
+    SYMBOLS[_name] = EnumValue(_name)
+SYMBOLS["Fail"] = DataConstructor("Fail")
+
 
 # Function to give the value inside an option.
 def _val_of(opt):
@@ -855,6 +862,55 @@ LIBRARY: Dict[str, Any] = {
     "random": _no_random,
 }
 
+# Function to give a multiset's elements as a list.
+def _as_list(value):
+    """A multiset as the list of its elements; anything else unchanged.
+
+    In CPN Tools ``'a ms`` *is* ``'a list``, so the list functions apply to
+    multisets: ``map f (CS.all ())`` is a list of images.
+
+    Args:
+        value: An argument.
+
+    Returns:
+        The argument, a multiset replaced by its elements in order.
+    """
+    if isinstance(value, MultiSet):
+        return tuple(v for v, c in value.items() for _ in range(c))
+    if type(value) is tuple and any(isinstance(v, MultiSet) for v in value):
+        return tuple(_as_list(v) for v in value)
+    return value
+
+
+# Function to make a list function accept multisets.
+def _on_lists(function):
+    """Wrap a (possibly curried) function so multiset arguments are lists.
+
+    Args:
+        function (callable): The list function.
+
+    Returns:
+        callable: The wrapped function.
+    """
+    def wrapped(argument):
+        result = function(_as_list(argument))
+        if callable(result) and not isinstance(result, (DataConstructor,)):
+            return _on_lists(result)
+        return result
+    return wrapped
+
+
+#: The names whose arguments may be multisets used as lists.
+LIST_FUNCTIONS = (
+    "hd", "tl", "length", "rev", "map", "app", "foldl", "foldr",
+    "mem", "rm", "rmall", "contains", "contains_all", "remdupl", "intersect",
+    "union", "listsub", "ins", "ins_new", "sort", "Misc.sort")
+
+LIBRARY.update({name: _on_lists(LIBRARY[name]) for name in LIST_FUNCTIONS})
+LIBRARY.update({name: _on_lists(f) for name, f in list(LIBRARY.items())
+                if name.startswith(("List.", "ListPair."))})
+
+
 #: CPN Tools' random distribution functions: each draws a value by chance.
 DISTRIBUTIONS = ("bernoulli", "beta", "binomial", "chisq", "discrete",
                  "erlang", "exponential", "gamma", "normal", "poisson",
@@ -878,6 +934,7 @@ def _no_distribution(name: str):
 
 
 LIBRARY.update({name: _no_distribution(name) for name in DISTRIBUTIONS})
+LIBRARY.update(SYMBOLS)
 
 
 # Function to count the elements of a list.

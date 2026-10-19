@@ -18,12 +18,13 @@ unit is the empty tuple.
 """
 
 import itertools
+import re
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .cpnml import (PRELUDE, EnumValue, IndexConstructor, IndexValue, MLError,
-                    MultiSet, compile_expression, parse_declarations,
-                    parse_expression)
+from .cpnml import (PRELUDE, ConValue, DataConstructor, EnumValue,
+                    IndexConstructor, IndexValue, MLError, MultiSet,
+                    compile_expression, parse_declarations, parse_expression)
 
 __all__ = ["ColourSet", "Declarations"]
 
@@ -116,6 +117,20 @@ class ColourSet:
             return (False, True)
         if self.kind in ("enum", "index"):
             return tuple(self.values)
+        if self.kind == "union":
+            out = []
+            for ctor, part in zip(self.labels, self.parts):
+                if not part:
+                    out.append(EnumValue(ctor))
+                    continue
+                other = sets.get(part)
+                values = other.domain(sets) if other else None
+                if values is None:
+                    return None
+                out.extend(ConValue(ctor, v) for v in values)
+                if len(out) > MAX_DOMAIN:
+                    return None
+            return tuple(out)
         if self.kind == "indexed":
             return tuple(self.values) if self.values else None
         if self.kind == "alias":
@@ -165,6 +180,52 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
     if name_el is None or not (name_el.text or "").strip():
         return None
     name = name_el.text.strip()
+    colset = _colour_from_xml(element, name)
+    if colset.kind == "unknown" or _incomplete(colset):
+        # Some writers put the definition only in the text CPN Tools shows
+        # (<layout>colset PH = index ph with 1..3;</layout>, with an empty
+        # <index/>); that text is then the declaration.
+        layout = element.findtext("layout")
+        if layout and layout.strip():
+            from_text = colour_from_text(layout)
+            if from_text is not None and from_text.kind != "unknown":
+                from_text.name = name
+                return from_text
+    return colset
+
+
+# Function to tell whether a colour set read from XML lacks its definition.
+def _incomplete(colset: "ColourSet") -> bool:
+    """An index without bounds, an enumeration without values and the like.
+
+    Args:
+        colset (ColourSet): The colour set as read from XML.
+
+    Returns:
+        bool: True when the XML body did not define it.
+    """
+    if colset.kind == "indexed":
+        return not colset.bounds
+    if colset.kind == "enum":
+        return not colset.values
+    if colset.kind in ("product", "record", "union"):
+        return not colset.parts
+    if colset.kind in ("list", "alias", "subset"):
+        return not colset.base
+    return False
+
+
+# Function to read one <color> element's structured body.
+def _colour_from_xml(element: ET.Element, name: str) -> ColourSet:
+    """The colour set as its XML body says.
+
+    Args:
+        element (Element): The ``<color>`` element.
+        name (str): Its name.
+
+    Returns:
+        ColourSet: The colour set (kind ``unknown`` when not understood).
+    """
     timed = element.find("timed") is not None
     body = None
     for child in element:
@@ -175,6 +236,22 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
         return ColourSet(name, "unknown", timed=timed)
 
     kind = body.tag
+    if kind in ("unit", "bool"):
+        # colset E = unit with e; colset B = bool with (no, yes): the values
+        # are renamed, which makes them constants of an enumeration (false
+        # before true, as bool orders them).
+        names = [(i.text or "").strip() for i in body.iter("id")]
+        if names:
+            return ColourSet(name, "enum",
+                             values=[EnumValue(n) for n in names], timed=timed)
+    if kind == "union":
+        labels, parts = [], []
+        for field in body.findall("unionfield"):
+            ctor = (field.findtext("id") or "").strip()
+            part = (field.findtext("type/id") or "").strip()
+            labels.append(ctor)
+            parts.append(part)
+        return ColourSet(name, "union", parts=parts, labels=labels, timed=timed)
     if kind in ("unit", "bool", "int", "real", "string", "intinf", "time"):
         values = _with_values(body)
         if kind == "int" and len(values) == 2:
@@ -241,6 +318,158 @@ def _read_colour(element: ET.Element) -> Optional[ColourSet]:
             colset.bounds = ("with", " ".join(_with_values(body)))
         return colset
     return ColourSet(name, "unknown", timed=timed)
+
+
+# Function to give an element's text without its <layout> child.
+def _own_text(element: ET.Element) -> str:
+    """The text of an element, leaving out the copy in its ``<layout>``.
+
+    CPN Tools stores what it shows in ``<layout>``; some writers repeat the
+    declaration there, and reading both would declare everything twice.
+
+    Args:
+        element (Element): An ``<ml>`` element.
+
+    Returns:
+        str: Its own text.
+    """
+    parts = [element.text or ""]
+    for child in element:
+        if child.tag != "layout":
+            parts.append("".join(child.itertext()))
+        parts.append(child.tail or "")
+    return "".join(parts)
+
+
+# Function to read a colour set written as CPN ML text.
+def colour_from_text(text: str) -> Optional[ColourSet]:
+    """``colset NAME = ... [timed];`` as a colour set.
+
+    Covers what CPN Tools' declaration language has: ``unit``/``bool``
+    (with renamed values), ``int``/``intinf``/``real``/``time``/``string``,
+    enumerations (``with a | b``), ``index``, ``product``, ``record``,
+    ``list``, ``union``, ``subset`` and aliases.
+
+    Args:
+        text (str): The declaration (comments allowed).
+
+    Returns:
+        ColourSet|None: The colour set, or None when the text is not a colour
+        set declaration.
+    """
+    text = re.sub(r"\(\*.*?\*\)", " ", text, flags=re.S)       # comments
+    words = re.findall(r"\.\.|[A-Za-z_][A-Za-z0-9_'.]*|~?\d+|\S", text)
+    if len(words) < 4 or words[0] != "colset" or words[2] != "=":
+        return None
+    name, body = str(words[1]), words[3:]
+    if body and body[-1] == ";":
+        body = body[:-1]
+    timed = bool(body) and body[-1] == "timed"
+    if timed:
+        body = body[:-1]
+    if not body:
+        return None
+    head = body[0]
+
+    def ids(seq, sep):
+        return [str(w) for w in seq if w != sep]
+
+    if head in ("unit", "bool"):
+        if "with" in body:
+            names = [str(w) for w in body[body.index("with") + 1:]
+                     if w not in ("(", ")", ",")]
+            return ColourSet(name, "enum", values=[EnumValue(n) for n in names],
+                             timed=timed)
+        return ColourSet(name, head, timed=timed)
+    if head in ("int", "intinf", "time", "real", "string"):
+        if head == "int" and "with" in body:
+            bounds = _range_of(body[body.index("with") + 1:])
+            if bounds is not None:
+                low, high = bounds
+                if 0 <= high - low <= MAX_DOMAIN:
+                    return ColourSet(name, "index",
+                                     values=list(range(low, high + 1)),
+                                     timed=timed)
+        mapped = {"intinf": "int", "time": "int"}.get(head, head)
+        return ColourSet(name, mapped, timed=timed)
+    if head == "with":
+        return ColourSet(name, "enum",
+                         values=[EnumValue(n) for n in ids(body[1:], "|")],
+                         timed=timed)
+    if head == "index" and len(body) >= 4 and body[2] == "with":
+        colset = ColourSet(name, "indexed", base=str(body[1]), timed=timed)
+        text_range = " ".join(str(w) for w in body[3:])
+        if ".." in text_range:
+            low, high = text_range.split("..", 1)
+            colset.bounds = (low.strip(), high.strip())
+        return colset
+    if head == "product":
+        return ColourSet(name, "product", parts=ids(body[1:], "*"), timed=timed)
+    if head == "record":
+        labels, parts = [], []
+        fields = ids(body[1:], "*")
+        for i in range(0, len(fields) - 2, 3):
+            labels.append(fields[i])
+            parts.append(fields[i + 2])
+        return ColourSet(name, "record", parts=parts, labels=labels, timed=timed)
+    if head == "list":
+        return ColourSet(name, "list", base=str(body[1]), timed=timed)
+    if head == "union":
+        labels, parts, rest = [], [], body[1:]
+        for group in _split_words(rest, "+"):
+            labels.append(str(group[0]))
+            parts.append(str(group[2]) if len(group) >= 3 and group[1] == ":"
+                         else "")
+        return ColourSet(name, "union", parts=parts, labels=labels, timed=timed)
+    if head == "subset" and len(body) >= 2:
+        colset = ColourSet(name, "subset", base=str(body[1]), timed=timed)
+        if len(body) > 3 and body[2] in ("by", "with"):
+            colset.bounds = (body[2], " ".join(str(w) for w in body[3:]))
+        return colset
+    if len(body) == 1:
+        return ColourSet(name, "alias", base=str(head), timed=timed)
+    return ColourSet(name, "unknown", timed=timed)
+
+
+# Function to split a word list on a separator.
+def _split_words(words, sep):
+    """Groups of words between separators.
+
+    Args:
+        words (list): The words.
+        sep (str): The separator.
+
+    Returns:
+        list: The groups.
+    """
+    groups, cur = [], []
+    for w in words:
+        if w == sep:
+            groups.append(cur)
+            cur = []
+        else:
+            cur.append(w)
+    groups.append(cur)
+    return [g for g in groups if g]
+
+
+# Function to read "a..b" from the words of a with clause.
+def _range_of(words):
+    """The integer bounds of ``with a..b``, when both are literals.
+
+    Args:
+        words (list): The words after ``with``.
+
+    Returns:
+        tuple|None: ``(low, high)``.
+    """
+    if len(words) != 3 or words[1] != "..":
+        return None
+    try:
+        return (int(str(words[0]).replace("~", "-")),
+                int(str(words[2]).replace("~", "-")))
+    except ValueError:
+        return None
 
 
 # Function to build a CS.ran that refuses, with a reason.
@@ -478,6 +707,57 @@ class Declarations:
         if prelude:
             self.globals.update(prelude)
 
+    # Method to tell whether a value belongs to a colour set's type.
+    def admits(self, value, name: Optional[str], depth: int = 0) -> bool:
+        """Whether ``value`` has the type of colour set ``name``.
+
+        A type test, not a domain test: ``7`` is admitted by ``INT`` and by
+        ``int with 1..3`` alike. It tells a token from a list of tokens: in
+        CPN Tools a multiset *is* a list, so an arc inscription ``[a, b]`` on
+        a place of colour set ``E`` puts two tokens, while on a place of
+        ``list E`` it puts one.
+
+        Args:
+            value: The value.
+            name (str, optional): The colour set; None or unknown admits all.
+            depth (int): Guard against cyclic declarations.
+
+        Returns:
+            bool: True when the value has the colour set's type.
+        """
+        colset = self.colsets.get(name) if name else None
+        if colset is None or depth > 20:
+            return True
+        kind = colset.kind
+        if kind in ("alias", "subset"):
+            return self.admits(value, colset.base, depth + 1)
+        if kind == "unit":
+            return value == ()
+        if kind == "bool":
+            return isinstance(value, bool)
+        if kind in ("int", "index"):
+            return isinstance(value, int) and not isinstance(value, bool)
+        if kind == "real":
+            return isinstance(value, float)
+        if kind == "string":
+            return isinstance(value, str) and not isinstance(value, EnumValue)
+        if kind == "enum":
+            return isinstance(value, EnumValue)
+        if kind == "indexed":
+            return isinstance(value, IndexValue) and value[0] == colset.base
+        if kind == "union":
+            if isinstance(value, ConValue):
+                return value[0] in colset.labels
+            return isinstance(value, EnumValue) and str(value) in colset.labels
+        if kind in ("product", "record"):
+            return (type(value) is tuple and len(value) == len(colset.parts)
+                    and all(self.admits(v, p, depth + 1)
+                            for v, p in zip(value, colset.parts)))
+        if kind == "list":
+            return type(value) is tuple and all(
+                self.admits(v, colset.base, depth + 1) for v in value)
+        return True
+
     # Method to read every colour set declaration.
     def _read_colours(self, root) -> None:
         """Collect the colour sets and the record field positions.
@@ -510,6 +790,10 @@ class Declarations:
                     self.symbols[str(value)] = value
             elif colset.kind == "indexed":
                 self.symbols[colset.base] = IndexConstructor(colset.base)
+            elif colset.kind == "union":
+                for ctor, part in zip(colset.labels, colset.parts):
+                    self.symbols[ctor] = (DataConstructor(ctor) if part
+                                          else EnumValue(ctor))
         self.globals.update(self.symbols)
         for name, colset in self.colsets.items():
             self.globals[f"{name}.all"] = self._all_of(colset)
@@ -623,7 +907,7 @@ class Declarations:
             root (Element): The document root.
         """
         for element in root.iter("ml"):
-            text = "".join(element.itertext()).strip()
+            text = _own_text(element).strip()
             if not text:
                 continue
             try:
@@ -653,6 +937,13 @@ class Declarations:
         from .cpnml import match_pattern       # local: avoids a cycle at import
 
         kind = entry[0]
+        if kind == "constructors":
+            from .cpnml import DataConstructor
+            for name, has_arg in entry[1]:
+                value = DataConstructor(name) if has_arg else EnumValue(name)
+                self.symbols[name] = value
+                self.globals[name] = value
+            return
         if kind == "fun":
             _name, tree = entry[1], entry[2]
             value = compile_expression(tree, self.globals, self.fields)({})

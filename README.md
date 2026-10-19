@@ -338,9 +338,24 @@ covers *every* input; `conformance` can call
 
 Guards and inscriptions are parsed, not pattern-matched: `if`/`then`/`else`,
 `let`/`in`/`end`, `case`/`of`, `fn`, function application, the operators with
-their SML precedences and associativities, lists, tuples, records, multisets
-and type annotations. The expression compiles to a closure, so firing stays
-fast.
+their SML precedences and associativities, lists, tuples, records (including
+flexible patterns `{data, ...}`), multisets, characters, string escapes,
+sequences `(e1; e2)`, `SOME`/`NONE`, operator sections `(op +)`, composition
+`o`, references (`globref`, `!`) and type annotations. The expression compiles
+to a closure, so firing stays fast.
+
+**The standard library is CPN Tools' own** (`cpncheck/mllib.py`): the SML
+Basis functions nets use (`Int`, `Real`, `Math`, `String`, `Char`, `Option`,
+`List`, `ListPair`), CPN Tools' list functions (`mem`, `rm`, `contains`,
+`intersect`, `listsub`, `ins_new`, `sort`...), its multiset functions (`cf`,
+`size`, `ms_to_col`, `ext_col`, `filter`, `==`, `<<=`...) and, per colour
+set, `size`, `ord`, `col`, `legal`, `mkstr`, `mkstr_ms`, `all`, `mult`. Each
+name follows SML's calling convention (`Int.max (a, b)` takes a pair), and
+each is checked against CPN Tools: `tests/data/mllib_cases.txt` was
+evaluated by CPN Tools itself and `tests/test_mllib.py` requires the same
+value -- or the same exception -- from CPNCheck. As in CPN Tools, a multiset
+is also a list (`map f (CS.all ())`), and a list on an arc of a place that
+does not hold lists is the multiset of its elements.
 
 A net's own `val` and `fun` declarations are read and used, which means **a net
 describes itself**. Nothing about what the tree nets compute is built into the
@@ -359,13 +374,17 @@ refused by name, never quietly ignored.
 
 Also read: multisets anywhere in an expression, input arcs that are
 expressions rather than patterns, enumeration constants, `index` colour sets,
-`subset ... by`/`with`, `CS.all()`, `CS.mult`, fusion sets, double arcs and
-several prime pages, variables defined by a guard, transition priorities,
-code segments without side effects (`input`/`output`/`action`), and timed
-nets with integer time (timestamps, `@+` delays on arcs and transitions,
-`time()`, the earliest-time rule). Not supported: synchronous channels, code
-with side effects, real-valued time (`@++`) and random values (`CS.ran()`,
-`exponential`) — the last two have no occurrence graph. Anything outside the
+`unit with e`, `bool with (no, yes)`, `union`, `subset ... by`/`with`, colour
+sets written only as text, fusion sets, double arcs and several prime pages,
+variables defined by a guard, transition priorities, transitions without
+input arcs, code segments without side effects (`input`/`output`/`action`),
+inhibitor and reset arcs, and timed nets with integer time (timestamps, `@+`
+delays on arcs and transitions, `@+` on input arcs, `time()`, the
+earliest-time rule). Where CPN Tools' documentation leaves a meaning open, it
+was measured in CPN Tools (`tests/nets/features`). Not supported: synchronous
+channels, code with side effects, real-valued time (`@++`) and random values
+(`CS.ran()`, `discrete`, `exponential`) — the last two have no occurrence
+graph. Anything outside the
 fragment raises `UnsupportedNet` rather than being mis-read — a wrong reading
 of a guard is a wrong verdict.
 

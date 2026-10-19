@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<workspaceElements><cpnet><globbox>
+<color id="ID101"><id>E</id><enum><id>a</id><id>b</id><id>c</id></enum></color>
+<color id="ID102"><id>LE</id><list><id>E</id></list></color>
+<var id="ID103"><type><id>E</id></type><id>x</id></var>
+<var id="ID104"><type><id>LE</id></type><id>l</id></var>
+</globbox><page id="ID1"><pageattr name="Top"/>
+<place id="ID1001"><text>Src</text><type><text>E</text></type><initmark><text>[a, b]</text></initmark></place>
+<place id="ID1002"><text>Lst</text><type><text>LE</text></type><initmark><text>[a, b]</text></initmark></place>
+<place id="ID1003"><text>Dbl</text><type><text>E</text></type></place>
+<place id="ID1004"><text>All</text><type><text>E</text></type></place>
+<place id="ID1005"><text>Lst2</text><type><text>LE</text></type></place>
+<trans id="ID2001"><text>T</text><cond><text></text></cond></trans>
+<trans id="ID2002"><text>U</text><cond><text></text></cond></trans>
+<arc id="ID3001" orientation="PtoT"><transend idref="ID2001"/><placeend idref="ID1001"/><annot><text>x</text></annot></arc>
+<arc id="ID3002" orientation="TtoP"><transend idref="ID2001"/><placeend idref="ID1003"/><annot><text>[x, x]</text></annot></arc>
+<arc id="ID3003" orientation="PtoT"><transend idref="ID2002"/><placeend idref="ID1002"/><annot><text>l</text></annot></arc>
+<arc id="ID3004" orientation="TtoP"><transend idref="ID2002"/><placeend idref="ID1004"/><annot><text>map (fn y => y) (E.all ())</text></annot></arc>
+<arc id="ID3005" orientation="TtoP"><transend idref="ID2002"/><placeend idref="ID1005"/><annot><text>l ^^ l</text></annot></arc>
+</page><instances><instance id="ID2" page="ID1"/></instances></cpnet></workspaceElements>

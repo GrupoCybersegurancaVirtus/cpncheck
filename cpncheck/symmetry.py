@@ -31,7 +31,7 @@ import itertools
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from .coloured import ColouredNet
-from .cpnml import TimedToken
+from .cpnml import TimedToken, sort_tokens
 from .equivalence import Equivalence, EquivalenceError
 from .formula import Formula, Holds, TokensIn
 
@@ -279,10 +279,10 @@ def symmetry_equivalence(net: ColouredNet,
         for i in moving:
             f = appliers[i]
             if i in timed:
-                out[i] = tuple(sorted(TimedToken(f(tok[0], maps), tok[1])
-                                      for tok in marking[i]))
+                out[i] = sort_tokens(TimedToken(f(tok[0], maps), tok[1])
+                                     for tok in marking[i])
             else:
-                out[i] = tuple(sorted(f(tok, maps) for tok in marking[i]))
+                out[i] = sort_tokens(f(tok, maps) for tok in marking[i])
         return tuple(out)
 
     def canonical(marking: tuple) -> tuple:

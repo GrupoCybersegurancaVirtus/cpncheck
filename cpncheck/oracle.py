@@ -99,7 +99,8 @@ try {
         try {
             var res = ev("val pyra_it = " + expr + ";");
             // SML breaks a long answer over several lines.
-            var m = /val pyra_it =\s*"([^"]*)"\s*: string/.exec(res);
+            // Escaped quotes may occur inside; Python decodes the escapes.
+            var m = /val pyra_it =\s*"((?:[^"\\]|\\.)*)"\s*: string/.exec(res);
             if (m) { out.values[key] = m[1]; } else { out.errors[key] = res.substring(0, 1500); }
         } catch (qe) {
             // One query that does not compile must not hide the others.
@@ -362,6 +363,11 @@ class CPNToolsOracle:
                                     + (proc.stdout + proc.stderr)[-3000:])
         with open(result_file, encoding="utf-8") as fh:
             result = json.load(fh)
+        # String answers arrive with SML's escapes (quotes, newlines,
+        # backslashes); decode them.
+        from .smlvalue import _unescape
+        result["values"] = {k: _unescape(v)
+                            for k, v in result.get("values", {}).items()}
         result["elapsed"] = elapsed
         shutil.rmtree(work, ignore_errors=True)
         return result
@@ -424,6 +430,11 @@ def compare_state_space(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
         rows.append((key, ours, theirs, ours is not None and ours == theirs))
     return {"net": cpn_path, "rows": rows, "agree": all(r[3] for r in rows),
             "errors": answer.get("errors", {})}
+
+
+#: Separates the places of one marking in an answer (a string token may hold
+#: "#", but hardly this).
+_SEP = "|#|"
 
 
 # Function to read a multiset as CPN Tools prints it.
@@ -509,9 +520,9 @@ def compare_graph_containment(cpn_path: str,
         parts = [f"st_Mark.{p['ml']} {p.get('instance', 1)} {n}" for p in places]
         if net.timed:
             parts.append(f"CPN'Time.mkstr (CreationTime {n})")
-        queries[f"m{n}"] = ' ^ "#" ^ '.join(parts)
-        queries[f"s{n}"] = ('String.concatWith "," (map (fn a => Int.toString '
-                            f'(DestNode a)) (OutArcs {n}))')
+        queries[f"m{n}"] = f' ^ "{_SEP}" ^ '.join(parts)
+        queries[f"s{n}"] = ('String.concatWith "," (map (fn cpnq_a => '
+                            f'Int.toString (DestNode cpnq_a)) (OutArcs {n}))')
     answer = oracle.run(cpn_path, "val _ = Control.Print.stringDepth := 1000000;",
                         queries, timeout=timeout)
     values = answer["values"]
@@ -526,15 +537,28 @@ def compare_graph_containment(cpn_path: str,
         text = values.get(f"m{n}")
         if text is None:
             continue
-        fields = text.split("#")
+        fields = text.split(_SEP)
         marking = tuple(_printed_multiset(f) for f in fields[:len(places)])
         if net.timed:
             marking += (fields[-1].strip(),)
         theirs[n] = marking
 
+    from .colourset import mkstr
+    from .cpnml import TimedToken
+    from .mllib import sml_int
+
+    sets = net.declarations.colsets
+
+    def written(token, colset):
+        # As CPN Tools writes a token: its mkstr, and @time when timed.
+        if isinstance(token, TimedToken):
+            return mkstr(token[0], colset, sets) + "@" + sml_int(token[1])
+        return mkstr(token, colset, sets)
+
     def ours_of(m):
-        key = tuple(tuple(sorted(str(t).replace(" ", "") for t in m[i]))
-                    for i in range(len(places)))
+        key = tuple(tuple(sorted(
+            re.sub(r"\s+", "", written(t, sets.get(places[i].get("colset"))))
+            for t in m[i])) for i in range(len(places)))
         return key + ((str(m[-1]),) if net.timed else ())
 
     ours = {ours_of(m): i for i, m in enumerate(ss.markings)}

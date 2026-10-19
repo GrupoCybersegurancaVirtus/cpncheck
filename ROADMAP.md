@@ -168,6 +168,42 @@ ProtocolWithTimer and TimedResourceAlloc (both infinite) are explored now.
 The 8 refusals are all outside the target: 4 code segments with side effects
 or full SML, 3 random values, 1 real-valued time.
 
+## Phase 5 -- nets other people wrote (done)
+
+The samples show CPN Tools' features; a corpus shows what people draw. 48
+nets from 11 sources -- the models of the Coloured Petri Nets book and
+public repositories -- are listed in `tests/corpus/manifest.json` (pinned
+commit and SHA-256; fetched, not committed). `corpus.py run --oracle`
+explores each and compares it with CPN Tools; `RESULTS.md` has the table.
+
+* **The CPN ML library is CPN Tools' own** (`cpncheck/mllib.py`): the SML
+  Basis subset, CPN Tools' list and multiset functions, the colour-set
+  functions, exceptions (`raise`, `handle`, `Empty`, `Subscript`...).
+  `tests/data/mllib_cases.txt` (236 expressions) was evaluated by CPN Tools
+  itself; CPNCheck must give the same value or the same exception. This
+  found silent errors: `Int.max`, `List.nth` and others were curried instead
+  of taking a pair (they returned a function), `Int.toString ~42` gave
+  `"-42"`, and the parser misplaced operators between precedence levels.
+* **Syntax and declarations found in the corpus**: colour sets given only as
+  text, `unit with`, `bool with`, `union`, `datatype`, `exception`, `local`,
+  references, curried functions by cases, sequences, flexible records,
+  annotations `e : T`; declarations no longer read twice from `<layout>`.
+* **Constructs measured in CPN Tools** (`tests/nets/features`): inhibitor
+  and reset arcs (the place must be empty / is emptied, whatever the
+  inscription), `@+` on input arcs (tokens taken `d` early), lists on arcs
+  of non-list places (multisets, since `'a ms` is `'a list`), transitions
+  without input arcs, arcs without inscriptions (CPN Tools does not compile
+  the transition: refused by name).
+* **Oracle fixes**: generated ASK-CTL used single-letter names that clash
+  with a net's constants; string answers with escaped quotes were lost;
+  timed markings were compared in Python's rendering instead of `mkstr`.
+
+Result: **0 reader bugs in 48 nets**; 12 explored within 20 000 markings,
+and every one CPN Tools compiles agrees with it (9 statistic by statistic, 2
+timed nets by containment); 17 over budget (mostly protocols without a
+bound); 19 refused, each outside what an occurrence graph expresses (random
+draws, real time, side effects) or a file CPN Tools does not compile either.
+
 ## State-space reduction (done)
 
 Every technique declares which properties it preserves; the checker uses it

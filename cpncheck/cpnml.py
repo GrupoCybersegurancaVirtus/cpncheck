@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "MLError",
+    "MLRaise",
     "MultiSet",
     "Delayed",
     "Stamped",
@@ -40,6 +41,7 @@ __all__ = [
     "IndexConstructor",
     "ConValue",
     "DataConstructor",
+    "sort_tokens",
     "parse_expression",
     "parse_pattern",
     "parse_declarations",
@@ -57,6 +59,30 @@ class MLError(Exception):
     """The expression is outside the fragment, or cannot be evaluated."""
 
 
+# Exception raised by an SML raise, catchable with handle.
+class MLRaise(MLError):
+    """An SML exception: ``raise e``, or one a library function raises.
+
+    ``e handle p => v`` catches these, matching ``p`` against :attr:`packet`;
+    other :class:`MLError` (a construct not understood, an unbound name) are
+    the checker's, not the net's, and are never handled.
+
+    Attributes:
+        packet: The exception value (``Empty``, ``Fail "msg"``...).
+    """
+
+    # Method to carry the exception value.
+    def __init__(self, packet, message: str = ""):
+        """Create the exception.
+
+        Args:
+            packet: The exception value.
+            message (str): For reports.
+        """
+        super().__init__(message or f"exception {packet!r}")
+        self.packet = packet
+
+
 # ---------------------------------------------------------------------------
 # Lexer
 # ---------------------------------------------------------------------------
@@ -65,15 +91,17 @@ class MLError(Exception):
 KEYWORDS = {
     "if", "then", "else", "let", "val", "in", "end", "fun", "fn", "case", "of",
     "andalso", "orelse", "not", "div", "mod", "true", "false", "nil", "rec",
+    "raise", "handle", "datatype", "exception",
 }
 
 #: Operators, longest first so that ``<=`` is not read as ``<`` then ``=``.
 OPERATORS = [
-    "<><>", "<<=", ">>=", "<<", ">>", "==",
+    "...", ":=", "<><>", "<<=", ">>=", "<<", ">>", "==",
     "=>", "->", "<=", ">=", "<>", "::", "+++", "++", "--", "@++", "@+", "@", "^^", "^", "+", "-",
     "*",
     "/",
     "<", ">", "=", "|", ":", ",", ";", "(", ")", "[", "]", "{", "}", "#", "~",
+    "!",
     "`", "_",
 ]
 
@@ -205,6 +233,9 @@ BINOPS = {
     "<<=": (2.5, "left"), ">>": (2.5, "left"), ">>=": (2.5, "left"),
     # Function composition, SML's infix 3.
     "o": (3, "left"),
+    # Assignment to a reference: SML's infix 3; it has a side effect, so it
+    # parses (to be refused by name) but never evaluates.
+    ":=": (0.5, "left"),
     "=": (4, "left"), "<>": (4, "left"), "<": (4, "left"), ">": (4, "left"),
     "<=": (4, "left"), ">=": (4, "left"),
     "::": (5, "right"), "^^": (5, "right"),
@@ -340,7 +371,18 @@ class Parser:
         if kind == "kw" and value == "fn":
             self.next()
             return ("fn", self.match_rules())
-        return self.binary(level)
+        if kind == "kw" and value == "raise":
+            self.next()
+            return ("raise", self.expression())
+        expr = self.binary(level)
+        if self.peek()[0] == "op" and self.peek()[1] == ":" and level == 0:
+            # e : T -- the annotation constrains nothing a value here does.
+            self.next()
+            self.skip_type()
+        if self.peek()[0] == "kw" and self.peek()[1] == "handle":
+            self.next()
+            return ("handle", expr, self.match_rules())
+        return expr
 
     # Method to parse a let block.
     def let_expression(self):
@@ -368,6 +410,11 @@ class Parser:
             self.accept("op", ";")
         self.expect("kw", "in")
         body = self.expression()
+        if self.peek()[0] == "op" and self.peek()[1] == ";":
+            items = [body]
+            while self.accept("op", ";"):
+                items.append(self.expression())
+            body = ("seq", items)
         self.expect("kw", "end")
         return ("let", bindings, body)
 
@@ -431,10 +478,16 @@ class Parser:
             for pattern in reversed(params):
                 body = ("fn", [(pattern, body)])
             return name, body
-        if arity != 1:
-            raise MLError(f"{name}: several clauses with {arity} parameters "
-                          "are not supported; rewrite them over a tuple")
-        return name, ("fn", [(params[0], body) for params, body in rules])
+        if arity == 1:
+            return name, ("fn", [(params[0], body) for params, body in rules])
+        # fun f p1 q1 = e1 | f p2 q2 = e2: take the arguments one by one,
+        # then match them together, clause by clause.
+        args = [f"cpnq_arg{i}" for i in range(arity)]
+        body = ("case", ("tuple", [("var", a) for a in args]),
+                [(("ptuple", params), clause) for params, clause in rules])
+        for arg in reversed(args):
+            body = ("fn", [(("pvar", arg), body)])
+        return name, body
 
     # Method to parse a binary-operator expression.
     def binary(self, level: int):
@@ -487,6 +540,9 @@ class Parser:
         if kind == "kw" and value == "not":
             self.next()
             return ("not", self.unary())
+        if kind == "op" and value == "!":
+            self.next()
+            return ("deref", self.unary())
         return self.atom()
 
     # Method to tell whether an atom can start here.
@@ -503,7 +559,7 @@ class Parser:
             return True
         if kind == "kw":
             return value in ("true", "false", "nil")
-        return kind == "op" and value in ("(", "[", "{", "#", "~")
+        return kind == "op" and value in ("(", "[", "{", "#", "~", "!")
 
     # Method to parse one atomic expression.
     def atom(self):
@@ -545,6 +601,12 @@ class Parser:
             items = [self.expression()]
             if self.accept("op", ":"):
                 self.skip_type()
+            if self.peek()[0] == "op" and self.peek()[1] == ";":
+                # (e1; e2; ...): evaluate in order, the value is the last.
+                while self.accept("op", ";"):
+                    items.append(self.expression())
+                self.expect("op", ")")
+                return ("seq", items)
             while self.accept("op", ","):
                 items.append(self.expression())
                 if self.accept("op", ":"):
@@ -634,7 +696,9 @@ class Parser:
         if kind == "id":
             symbol = self.symbols.get(value, _MISSING)
             if isinstance(symbol, (IndexConstructor, DataConstructor)):
-                return ("pcon", value, self.pattern_atom())
+                # The kind says how to rebuild the value from the pattern.
+                kind = "data" if isinstance(symbol, DataConstructor) else "index"
+                return ("pcon", value, self.pattern_atom(), kind)
             if symbol is not _MISSING:
                 return ("plit", symbol)          # a declared constant
             return ("pvar", value)
@@ -669,15 +733,22 @@ class Parser:
             return ("plist", items)
         if kind == "op" and value == "{":
             fields = []
+            flexible = False
             if not self.accept("op", "}"):
                 while True:
+                    if self.accept("op", "..."):
+                        # {seq, ...}: the other fields are not matched.
+                        flexible = True
+                        break
                     label = str(self.next()[1])
-                    self.expect("op", "=")
-                    fields.append((label, self.pattern()))
+                    if self.accept("op", "="):
+                        fields.append((label, self.pattern()))
+                    else:
+                        fields.append((label, ("pvar", label)))   # {data}
                     if not self.accept("op", ","):
                         break
                 self.expect("op", "}")
-            return ("precord", fields)
+            return ("precord", fields, flexible)
         raise MLError(f"{value!r} cannot start a pattern")
 
     # ------------------------------------------------------------------
@@ -819,6 +890,17 @@ def parse_declarations(text: str, symbols=None) -> List[Tuple]:
             elif parser.accept("kw", "fun"):
                 name, rule = parser.fun_clause()
                 out.append(("fun", name, rule))
+            elif parser.peek()[0] == "kw" and parser.peek()[1] in (
+                    "datatype", "exception"):
+                out.append(_constructors_declaration(parser))
+            elif parser.peek()[0] == "id" and parser.peek()[1] == "globref":
+                # globref x = e: a reference, read with !x. Nets use them as
+                # parameters; assigning one (:=) is a side effect, refused.
+                parser.next()
+                name = parser.expect("id")[1]
+                parser.expect("op", "=")
+                out.append(("val", ("pvar", name), ("app", ("var", "ref"),
+                                                    parser.expression())))
             else:
                 parser.next()
                 continue
@@ -832,6 +914,41 @@ def parse_declarations(text: str, symbols=None) -> List[Tuple]:
             continue
         parser.accept("op", ";")
     return out
+
+
+# Function to read a datatype or exception declaration.
+def _constructors_declaration(parser: "Parser") -> Tuple:
+    """``datatype t = A | B of int * t`` or ``exception E of string``.
+
+    The constructors become symbols of the parser at once, so that the
+    declarations after it can match them in patterns.
+
+    Args:
+        parser (Parser): Positioned on ``datatype`` or ``exception``.
+
+    Returns:
+        tuple: ``("constructors", [(name, takes_argument), ...])``.
+    """
+    keyword = parser.next()[1]
+    ctors = []
+    while True:
+        if keyword == "datatype":
+            parser.expect("id")                     # the type's name
+            parser.expect("op", "=")
+        while True:
+            name = parser.expect("id")[1]
+            has_arg = parser.accept("kw", "of")
+            if has_arg:
+                parser.skip_type()
+            ctors.append((name, has_arg))
+            parser.symbols[name] = (DataConstructor(name) if has_arg
+                                    else EnumValue(name))
+            if keyword == "exception" or not parser.accept("op", "|"):
+                break
+        if not (parser.peek()[0] == "id" and parser.peek()[1] == "and"):
+            break
+        parser.next()                               # datatype ... and ...
+    return ("constructors", ctors)
 
 
 # Function to skip past the end of a declaration.
@@ -1015,7 +1132,8 @@ def _ms_diff(left, right) -> "MultiSet":
     out = dict(_as_multiset(left).counts)
     for value, count in _as_multiset(right).items():
         if out.get(value, 0) < count:
-            raise MLError(f"cannot subtract {count}`{value!r}: not contained")
+            raise MLRaise(EnumValue("Subtract"),
+                          f"cannot subtract {count}`{value!r}: not contained")
         out[value] -= count
     return MultiSet(out)
 
@@ -1417,6 +1535,99 @@ class DataConstructor:
         return f"<constructor {self.name}>"
 
 
+# Class holding an SML reference.
+class Ref:
+    """``ref v``: a mutable cell. Only read here (``!r``); assigning one is
+    a side effect, which an occurrence graph cannot have.
+
+    Attributes:
+        value: The contents.
+    """
+
+    __slots__ = ("value",)
+
+    # Method to create the reference.
+    def __init__(self, value):
+        """Create the cell.
+
+        Args:
+            value: Its contents.
+        """
+        self.value = value
+
+    # Method to render the reference.
+    def __repr__(self):
+        """Return ``ref v``.
+
+        Returns:
+            str: The text.
+        """
+        return f"ref {self.value!r}"
+
+
+# Function standing for assignment, which is refused.
+def _assign(_ref, _value):
+    """``r := v`` changes state outside the marking.
+
+    Raises:
+        MLError: Always.
+    """
+    raise MLError("assignment (:=) to a reference has a side effect; a net "
+                  "whose inscriptions change state outside the marking has "
+                  "no occurrence graph of its own")
+
+
+# Function to give a total order over token values of any kind.
+def token_key(value):
+    """A sort key under which any two token values compare.
+
+    A place may hold values Python cannot compare -- ``Ack`` (a constant)
+    and ``Data 1`` (a constructed value) of one union colour set -- yet a
+    marking is kept sorted, so that equal markings are equal tuples.
+
+    Args:
+        value: A token value.
+
+    Returns:
+        tuple: The key.
+    """
+    if isinstance(value, bool):
+        return (0, int(value))
+    if isinstance(value, (int, float)):
+        return (1, value)
+    if isinstance(value, EnumValue):
+        return (2, str(value))
+    if isinstance(value, str):
+        return (3, value)
+    if isinstance(value, IndexValue):
+        return (4, value[0], token_key(value[1]))
+    if isinstance(value, ConValue):
+        return (5, value[0], token_key(value[1]))
+    if isinstance(value, TimedToken):
+        return (6, token_key(value[0]), value[1])
+    if isinstance(value, tuple):
+        return (7, tuple(token_key(v) for v in value))
+    return (8, repr(value))
+
+
+# Function to sort the tokens of a place.
+def sort_tokens(tokens) -> tuple:
+    """The tokens in canonical order.
+
+    Args:
+        tokens (iterable): Token values.
+
+    Returns:
+        tuple: Sorted; values of one kind by their own order, mixed kinds by
+        :func:`token_key`.
+    """
+    tokens = list(tokens)
+    try:
+        return tuple(sorted(tokens))
+    except TypeError:
+        return tuple(sorted(tokens, key=token_key))
+
+
 # Class holding a function value with the environment it closed over.
 class Closure:
     """A CPN ML function: clauses, and the bindings visible where it was written.
@@ -1427,20 +1638,23 @@ class Closure:
         name (str): For error messages.
     """
 
-    __slots__ = ("rules", "env", "name")
+    __slots__ = ("rules", "env", "name", "fields")
 
     # Method to build a function value.
-    def __init__(self, rules, env, name="fn"):
+    def __init__(self, rules, env, name="fn", fields=None):
         """Create the closure.
 
         Args:
             rules (list): ``(pattern, compiled body)`` clauses.
             env (dict): Captured bindings.
             name (str): Name used in error messages.
+            fields (dict, optional): ``label -> index``, for record patterns
+                among the parameters.
         """
         self.rules = rules
         self.env = env
         self.name = name
+        self.fields = fields
 
     # Method to apply the function to an argument.
     def __call__(self, argument):
@@ -1456,10 +1670,11 @@ class Closure:
             MLError: When no clause matches.
         """
         for pattern, body in self.rules:
-            bound = match_pattern(pattern, argument, self.env)
+            bound = match_pattern(pattern, argument, self.env, self.fields)
             if bound is not None:
                 return body(bound)
-        raise MLError(f"{self.name}: no clause matches {argument!r}")
+        raise MLRaise(EnumValue("Match"),
+                      f"{self.name}: no clause matches {argument!r}")
 
     # Method to render the closure for debugging.
     def __repr__(self):
@@ -1601,8 +1816,13 @@ def free_variables(tree) -> set:
         return {tree[1]}
     if tag in ("lit", "selector", "opfn"):
         return set()
-    if tag in ("neg", "not"):
+    if tag in ("neg", "not", "deref", "raise"):
         return free_variables(tree[1])
+    if tag == "handle":
+        out = free_variables(tree[1])
+        for pattern, handler in tree[2]:
+            out |= free_variables(handler) - pattern_variables(pattern)
+        return out
     if tag == "binop":
         return free_variables(tree[2]) | free_variables(tree[3])
     if tag == "if":
@@ -1610,7 +1830,7 @@ def free_variables(tree) -> set:
                 | free_variables(tree[3]))
     if tag == "app":
         return free_variables(tree[1]) | free_variables(tree[2])
-    if tag in ("tuple", "list"):
+    if tag in ("tuple", "list", "seq"):
         out = set()
         for item in tree[1]:
             out |= free_variables(item)
@@ -1705,7 +1925,7 @@ def _integer_division(a, b, op: str):
         MLError: On division by zero.
     """
     if b == 0:
-        raise MLError(f"exception Div: {a} {op} 0")
+        raise MLRaise(EnumValue("Div"), f"exception Div: {a} {op} 0")
     return a // b if op == "div" else a % b
 
 
@@ -1783,6 +2003,49 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
                           "declare it")
         return lambda env, i=index: (lambda record: record[i])
 
+    if tag == "raise":
+        inner = compile_(tree[1])
+
+        def raise_(env, inner=inner):
+            packet = inner(env)
+            raise MLRaise(packet, f"exception {packet!r} raised")
+        return raise_
+
+    if tag == "handle":
+        body = compile_(tree[1])
+        rules = [(pattern, compile_(handler)) for pattern, handler in tree[2]]
+
+        def handle(env, body=body, rules=rules, fields=fields):
+            try:
+                return body(env)
+            except MLRaise as exc:
+                for pattern, handler in rules:
+                    bound = match_pattern(pattern, exc.packet, env, fields)
+                    if bound is not None:
+                        return handler(bound)
+                raise
+        return handle
+
+    if tag == "seq":
+        parts = [compile_(item) for item in tree[1]]
+
+        def run_seq(env, parts=parts):
+            value = None
+            for part in parts:
+                value = part(env)
+            return value
+        return run_seq
+
+    if tag == "deref":
+        inner = compile_(tree[1])
+
+        def deref(env, inner=inner):
+            box = inner(env)
+            if not isinstance(box, Ref):
+                raise MLError(f"! of {box!r}, which is not a reference")
+            return box.value
+        return deref
+
     if tag == "opfn":
         apply = _BINARY[tree[1]]
         return lambda env, apply=apply: (lambda pair: apply(pair[0], pair[1]))
@@ -1837,7 +2100,7 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
 
     if tag == "fn":
         rules = [(pattern, compile_(body)) for pattern, body in tree[1]]
-        return lambda env: Closure(rules, env)
+        return lambda env, fields=fields: Closure(rules, env, fields=fields)
 
     if tag == "let":
         steps = []
@@ -1854,8 +2117,8 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
                 if kind == "val":
                     bound = match_pattern(target, value(local), local, fields)
                     if bound is None:
-                        raise MLError(f"the let binding {target!r} does not "
-                                      "match")
+                        raise MLRaise(EnumValue("Bind"), f"the let binding "
+                                      f"{target!r} does not match")
                     local = bound
                 else:
                     closure = value(local)
@@ -1876,7 +2139,7 @@ def compile_expression(tree, globals_: Optional[Dict] = None,
                 bound = match_pattern(pattern, value, env, fields)
                 if bound is not None:
                     return body(bound)
-            raise MLError(f"no case matches {value!r}")
+            raise MLRaise(EnumValue("Match"), f"no case matches {value!r}")
         return run_case
 
     raise MLError(f"cannot compile {tag!r}")
@@ -1917,6 +2180,8 @@ from .mllib import LIBRARY as _LIBRARY, SYMBOLS as _SYMBOLS  # noqa: E402
 from .mllib import ms_compare as _ms_compare  # noqa: E402
 
 PRELUDE.update(_LIBRARY)
+PRELUDE["ref"] = Ref
+_BINARY[":="] = _assign
 DEFAULT_SYMBOLS.update(_SYMBOLS)
 for _op in ("==", "<><>", "<<", "<<=", ">>", ">>="):
     _BINARY[_op] = _ms_compare(_op)

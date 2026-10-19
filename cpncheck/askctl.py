@@ -17,7 +17,7 @@ library shipped with CPN Tools):
 ``EU``                     ``EXIST_UNTIL``
 ``AF`` (textbook)          ``AFmax``, declared below
 ``AF`` (ASK-CTL reading)   ``EV``
-atomic propositions        ``NF("name", fn n => ...)`` over the node's marking
+atomic propositions        ``NF("name", fn cpnq_n => ...)`` over the node's marking
 ``ForEach``                folded into ``AND``, one conjunct per member
 =========================  ====================================================
 
@@ -97,9 +97,9 @@ class MLProgram:
             pidx (int): Place index.
 
         Returns:
-            str: ``(fn n => size (Mark.Page'Place 1 n))``.
+            str: ``(fn cpnq_n => size (Mark.Page'Place 1 cpnq_n))``.
         """
-        return f"(fn n => size ({self.multiset(pidx)}))"
+        return f"(fn cpnq_n => size ({self.multiset(pidx)}))"
 
     # Method to render a list of token counters.
     def marks(self, places: Sequence[int]) -> str:
@@ -121,10 +121,10 @@ class MLProgram:
             pidx (int): Place index.
 
         Returns:
-            str: ``Mark.Page'Place 1 n``.
+            str: ``Mark.Page'Place 1 cpnq_n``.
         """
         p = self.net.places[pidx]
-        return f"Mark.{_ml_of(p)} {p.get('instance', 1)} n"
+        return f"Mark.{_ml_of(p)} {p.get('instance', 1)} cpnq_n"
 
     # Method to declare and name an arc predicate for a transition group.
     def group(self, transitions: Sequence[int]) -> str:
@@ -150,8 +150,10 @@ class MLProgram:
             f"Bind.{_ml_of(self.net.transitions[ti])} "
             f"({self.net.transitions[ti].get('instance', 1)}, _) => true"
             for ti in key)
-        self.declare("fun enCount isT n = length (List.filter isT (OutArcs n));")
-        self.declare(f"fun {name} a = case ArcToBE a of {cases} | _ => false;")
+        self.declare("fun enCount cpnq_isT cpnq_n = length "
+                     "(List.filter cpnq_isT (OutArcs cpnq_n));")
+        self.declare(f"fun {name} cpnq_a = case ArcToBE cpnq_a of {cases} "
+                     "| _ => false;")
         self._groups[key] = name
         return name
 
@@ -183,52 +185,56 @@ class MLProgram:
         if isinstance(phi, F.Marked):
             places = ctx.select(phi.selector)
             body = (f"size ({self.multiset(places[0])}) > 0" if len(places) == 1
-                    else f"List.exists (fn f => f n > 0) {self.marks(places)}")
-            return f'NF("marked", fn n => {body})'
+                    else f"List.exists (fn cpnq_f => cpnq_f cpnq_n > 0) "
+                    f"{self.marks(places)}")
+            return f'NF("marked", fn cpnq_n => {body})'
 
         if isinstance(phi, F.AllMarked):
             places = ctx.select(phi.selector)
-            return ('NF("all marked", fn n => List.all (fn f => f n > 0) '
+            return ('NF("all marked", fn cpnq_n => List.all '
+                    '(fn cpnq_f => cpnq_f cpnq_n > 0) '
                     f'{self.marks(places)})')
 
         if isinstance(phi, F.MaxTokens):
             places = ctx.select(phi.selector)
-            return (f'NF("at most {phi.limit}", fn n => List.all '
-                    f'(fn f => f n <= {phi.limit}) {self.marks(places)})')
+            return (f'NF("at most {phi.limit}", fn cpnq_n => List.all '
+                    f'(fn cpnq_f => cpnq_f cpnq_n <= {phi.limit}) '
+                    f'{self.marks(places)})')
 
         if isinstance(phi, F.TokensIn):
             places = ctx.select(phi.selector)
             domain = "[" + ", ".join(_ml_literal(v)
                                      for v in sorted(phi.domain)) + "]"
-            parts = [f"(let val m = {self.multiset(p)} in size m = List.foldl "
-                     f"(fn (k, acc) => acc + cf (k, m)) 0 {domain} end)"
+            parts = [f"(let val cpnq_m = {self.multiset(p)} in size cpnq_m = "
+                     f"List.foldl (fn (cpnq_k, cpnq_acc) => cpnq_acc + "
+                     f"cf (cpnq_k, cpnq_m)) 0 {domain} end)"
                      for p in places]
-            return ('NF("in domain", fn n => ' + " andalso ".join(parts) + ")")
+            return ('NF("in domain", fn cpnq_n => ' + " andalso ".join(parts) + ")")
 
         if isinstance(phi, F.TokenCount):
             places = ctx.select(phi.selector)
-            total = " + ".join(f"{self.mark(p)} n" for p in places) or "0"
-            return (f'NF("tokens", fn n => ({total}) {phi.op} {phi.limit})')
+            total = " + ".join(f"{self.mark(p)} cpnq_n" for p in places) or "0"
+            return (f'NF("tokens", fn cpnq_n => ({total}) {phi.op} {phi.limit})')
 
         if isinstance(phi, F.Holds):
             places = ctx.select(phi.selector)
             parts = " orelse ".join(f"cf ({phi.ml_text}, {self.multiset(p)}) > 0"
                                     for p in places) or "false"
-            return f'NF("has", fn n => {parts})'
+            return f'NF("has", fn cpnq_n => {parts})'
 
         if isinstance(phi, F.EnabledTally):
             name = self.group(ctx.select(phi.selector))
-            return (f'NF("enabled count", fn n => enCount {name} n '
+            return (f'NF("enabled count", fn cpnq_n => enCount {name} cpnq_n '
                     f'{phi.op} {phi.limit})')
 
         if isinstance(phi, F.Enabled):
             name = self.group(ctx.select(phi.selector))
-            return f'NF("enabled", fn n => enCount {name} n > 0)'
+            return f'NF("enabled", fn cpnq_n => enCount {name} cpnq_n > 0)'
 
         if isinstance(phi, F.EnabledCount):
             name = self.group(ctx.select(phi.selector))
-            return (f'NF("at most {phi.limit} enabled", fn n => enCount '
-                    f'{name} n <= {phi.limit})')
+            return (f'NF("at most {phi.limit} enabled", fn cpnq_n => enCount '
+                    f'{name} cpnq_n <= {phi.limit})')
 
         if isinstance(phi, F.Not):
             return f"NOT({render(phi.operand)})"

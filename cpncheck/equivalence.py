@@ -36,7 +36,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .coloured import ColouredNet
-from .cpnml import TimedToken
+from .cpnml import TimedToken, sort_tokens
 from .formula import Context, Formula
 from .statespace import StateSpace
 
@@ -138,8 +138,8 @@ def time_equivalence(net: ColouredNet) -> Equivalence:
             return marking
         out = list(marking)
         for p in timed:
-            out[p] = tuple(sorted(TimedToken(tok[0], max(0, tok[1] - clock))
-                                  for tok in marking[p]))
+            out[p] = sort_tokens(TimedToken(tok[0], max(0, tok[1] - clock))
+                                 for tok in marking[p])
         out[-1] = 0
         return tuple(out)
 

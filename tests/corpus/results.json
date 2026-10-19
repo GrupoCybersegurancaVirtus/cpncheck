@@ -1,0 +1,725 @@
+[
+ {
+  "id": "cpnbook/2-1DeterministicProtocol.cpn",
+  "status": "explored",
+  "nodes": 31,
+  "arcs": 30,
+  "dead": 1,
+  "timed": false,
+  "places": 7,
+  "transitions": 5,
+  "seconds": 0.0033457999998063315,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "31",
+    "31"
+   ],
+   "arcs": [
+    "30",
+    "30"
+   ],
+   "scc_nodes": [
+    "31",
+    "31"
+   ],
+   "scc_arcs": [
+    "30",
+    "30"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "cpnbook/2-10NondeterministicProtocol.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 100310,
+  "dead": 62,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 3.0430284000003667
+ },
+ {
+  "id": "cpnbook/3-1UnionRecord.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 116577,
+  "dead": 156,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 3.8108053000005384
+ },
+ {
+  "id": "cpnbook/3-7Queues.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 91852,
+  "dead": 27,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 4.657760399999461
+ },
+ {
+  "id": "cpnbook/3-18Functions.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 100310,
+  "dead": 62,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 2.944134999999733
+ },
+ {
+  "id": "cpnbook/3-19Polymorphic.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 100310,
+  "dead": 62,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 3.1176499000002877
+ },
+ {
+  "id": "cpnbook/3-20Recursion.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 148143,
+  "dead": 13,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 5.321055800000067
+ },
+ {
+  "id": "cpnbook/5-1HierarhicalProtocol.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 100310,
+  "dead": 62,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 2.5395641000004616
+ },
+ {
+  "id": "cpnbook/5-8Instances.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 100310,
+  "dead": 62,
+  "timed": false,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 2.689734900000076
+ },
+ {
+  "id": "cpnbook/5-19TwoReceivers.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 98464,
+  "dead": 1011,
+  "timed": false,
+  "places": 14,
+  "transitions": 8,
+  "seconds": 3.2237692999997307
+ },
+ {
+  "id": "cpnbook/5-24TwoReceivers.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 98456,
+  "dead": 1013,
+  "timed": false,
+  "places": 10,
+  "transitions": 6,
+  "seconds": 3.968005599999742
+ },
+ {
+  "id": "cpnbook/5-30MultipleReceivers.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 89837,
+  "dead": 4032,
+  "timed": false,
+  "places": 9,
+  "transitions": 5,
+  "seconds": 8.144246699999712
+ },
+ {
+  "id": "cpnbook/7-2LimitProtocol.cpn",
+  "status": "explored",
+  "nodes": 13215,
+  "arcs": 52784,
+  "dead": 1,
+  "timed": false,
+  "places": 9,
+  "transitions": 5,
+  "seconds": 1.1462910000000193,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "13215",
+    "13215"
+   ],
+   "arcs": [
+    "52784",
+    "52784"
+   ],
+   "scc_nodes": [
+    "5013",
+    "5013"
+   ],
+   "scc_arcs": [
+    "37312",
+    "37312"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "cpnbook/10-1TimedProtocol.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 23099,
+  "dead": 2752,
+  "timed": true,
+  "places": 8,
+  "transitions": 5,
+  "seconds": 1.633700399999725
+ },
+ {
+  "id": "cpnbook/10-19TimedStateSpaces.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 31513,
+  "dead": 6089,
+  "timed": true,
+  "places": 11,
+  "transitions": 5,
+  "seconds": 2.481190499999684
+ },
+ {
+  "id": "cpnbook/12-1PerformanceProtocol.cpn",
+  "status": "refused",
+  "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
+  "seconds": 0.0066195000008519855
+ },
+ {
+  "id": "cpnbook/12-2-6PerformanceProtocol.cpn",
+  "status": "refused",
+  "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
+  "seconds": 0.006019000000378583
+ },
+ {
+  "id": "cpnbook/12-7PerformanceProtocol.cpn",
+  "status": "refused",
+  "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
+  "seconds": 0.0068701999998666
+ },
+ {
+  "id": "dynamic-coloured-petri-net/Pn model one.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 26583,
+  "dead": 188,
+  "timed": false,
+  "places": 36,
+  "transitions": 18,
+  "seconds": 2.627440299999762
+ },
+ {
+  "id": "dynamic-coloured-petri-net/Pn model two.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 27187,
+  "dead": 7,
+  "timed": true,
+  "places": 37,
+  "transitions": 19,
+  "seconds": 3.894444300000032
+ },
+ {
+  "id": "dynamic-coloured-petri-net/pn model three.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 25717,
+  "dead": 10021,
+  "timed": true,
+  "places": 49,
+  "transitions": 25,
+  "seconds": 10.38166639999963
+ },
+ {
+  "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-One.cpn",
+  "status": "over budget",
+  "nodes": 20000,
+  "arcs": 35056,
+  "dead": 3596,
+  "timed": true,
+  "places": 17,
+  "transitions": 11,
+  "seconds": 6.100465600000462
+ },
+ {
+  "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Two.cpn",
+  "status": "refused",
+  "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.011990199999672768
+ },
+ {
+  "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Three-A.cpn",
+  "status": "refused",
+  "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.010835600000064005
+ },
+ {
+  "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Three-B.cpn",
+  "status": "refused",
+  "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.010265600000820996
+ },
+ {
+  "id": "SED_Projeto02/modelo_cpn_tools.cpn",
+  "status": "explored",
+  "nodes": 66,
+  "arcs": 246,
+  "dead": 0,
+  "timed": false,
+  "places": 13,
+  "transitions": 19,
+  "seconds": 0.010971699999572593,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "66",
+    "66"
+   ],
+   "arcs": [
+    "246",
+    "246"
+   ],
+   "scc_nodes": [
+    "1",
+    "1"
+   ],
+   "scc_arcs": [
+    "0",
+    "0"
+   ],
+   "dead": [
+    "0",
+    "0"
+   ],
+   "home": [
+    "66",
+    "66"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "PetriNets_CPN_Workflow/ScrumWorkflow2.cpn",
+  "status": "refused",
+  "reason": "Estimate tasks: output arc: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.010242399999697227
+ },
+ {
+  "id": "sdn-coloredpetrinet-model/finalwork.cpn",
+  "status": "refused",
+  "reason": "R_NetDevInfor: code segment: unbound name 'ConnManagementLayer.openConnection'",
+  "seconds": 0.004167600000073435
+ },
+ {
+  "id": "advanced-topics-cs/ID1179034-part1.cpn",
+  "status": "refused",
+  "reason": "initial marking '15`()@0.0': model time must be an integer, not 0.0 (real-time nets are not supported)",
+  "seconds": 0.010657599999831291
+ },
+ {
+  "id": "advanced-topics-cs/ID1179034-part2.cpn",
+  "status": "refused",
+  "reason": "initial marking '15`()@0.0': model time must be an integer, not 0.0 (real-time nets are not supported)",
+  "seconds": 0.011066999999457039
+ },
+ {
+  "id": "system_engineering/testProject.cpn",
+  "status": "refused",
+  "reason": "New Page/Ship: an arc without an inscription; CPN Tools does not compile the transition (it can never occur there) -- give the arc its inscription",
+  "seconds": 0.0009829999999055872
+ },
+ {
+  "id": "system_engineering/project2.cpn",
+  "status": "refused",
+  "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.004946399999425921
+ },
+ {
+  "id": "system_engineering/project3.cpn",
+  "status": "refused",
+  "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.017042000000401458
+ },
+ {
+  "id": "system_engineering/project5.cpn",
+  "status": "refused",
+  "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.014579200000298442
+ },
+ {
+  "id": "system_engineering/projectWithSenario.cpn",
+  "status": "refused",
+  "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.040321700000276905
+ },
+ {
+  "id": "db-net-eip-patterns/aggregator.cpn",
+  "status": "explored",
+  "nodes": 1,
+  "arcs": 0,
+  "dead": 1,
+  "timed": false,
+  "places": 6,
+  "transitions": 5,
+  "seconds": 0.003369600000041828,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "1",
+    "1"
+   ],
+   "arcs": [
+    "0",
+    "0"
+   ],
+   "scc_nodes": [
+    "1",
+    "1"
+   ],
+   "scc_arcs": [
+    "0",
+    "0"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "db-net-eip-patterns/content_enricher.cpn",
+  "status": "explored",
+  "nodes": 8,
+  "arcs": 12,
+  "dead": 1,
+  "timed": false,
+  "places": 6,
+  "transitions": 3,
+  "seconds": 0.0030324999997901614,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "8",
+    "8"
+   ],
+   "arcs": [
+    "12",
+    "12"
+   ],
+   "scc_nodes": [
+    "8",
+    "8"
+   ],
+   "scc_arcs": [
+    "12",
+    "12"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "db-net-eip-patterns/delayer.cpn",
+  "status": "explored",
+  "nodes": 11,
+  "arcs": 10,
+  "dead": 10,
+  "timed": true,
+  "places": 3,
+  "transitions": 1,
+  "seconds": 0.002337200000511075,
+  "oracle": "contained",
+  "oracle_detail": {
+   "nodes": [
+    11,
+    11
+   ],
+   "arcs": [
+    10,
+    10
+   ],
+   "dead": [
+    10,
+    10
+   ],
+   "missing_arcs": 0
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "db-net-eip-patterns/message_translator.cpn",
+  "status": "explored",
+  "nodes": 2,
+  "arcs": 1,
+  "dead": 1,
+  "timed": false,
+  "places": 2,
+  "transitions": 1,
+  "seconds": 0.0019115000004603644,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "2",
+    "2"
+   ],
+   "arcs": [
+    "1",
+    "1"
+   ],
+   "scc_nodes": [
+    "2",
+    "2"
+   ],
+   "scc_arcs": [
+    "1",
+    "1"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "db-net-eip-patterns/splitter.cpn",
+  "status": "refused",
+  "reason": "guard '[obj !=nil]': '=' cannot start an expression",
+  "seconds": 0.0026049000007333234
+ },
+ {
+  "id": "db-net-eip-patterns/throttler.cpn",
+  "status": "refused",
+  "reason": "get message: output arc: exponential draws a random value; a net that does has no deterministic occurrence graph and is not supported",
+  "seconds": 0.00412999999934982
+ },
+ {
+  "id": "db-net-eip-patterns/resequencer.cpn",
+  "status": "explored",
+  "nodes": 1,
+  "arcs": 0,
+  "dead": 1,
+  "timed": false,
+  "places": 7,
+  "transitions": 6,
+  "seconds": 0.0036948999995729537,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "1",
+    "1"
+   ],
+   "arcs": [
+    "0",
+    "0"
+   ],
+   "scc_nodes": [
+    "1",
+    "1"
+   ],
+   "scc_arcs": [
+    "0",
+    "0"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "publish-subscribe/publish-subscribe.cpn",
+  "status": "refused",
+  "reason": "Subscription/ASG_bought_0: an arc without an inscription; CPN Tools does not compile the transition (it can never occur there) -- give the arc its inscription",
+  "seconds": 0.02247669999997015
+ },
+ {
+  "id": "CPNpy/dining_philosophers.cpn",
+  "status": "explored",
+  "nodes": 4,
+  "arcs": 6,
+  "dead": 0,
+  "timed": false,
+  "places": 3,
+  "transitions": 2,
+  "seconds": 0.0015437000001838896,
+  "oracle": "rejected by CPN Tools",
+  "oracle_errors": {
+   "driver": "org.cpntools.accesscpn.engine.highlevel.DeclarationCheckerException: IDW2: Error. Could not parse declaration colset PH = index null with null..null;."
+  }
+ },
+ {
+  "id": "CPNpy/guarded_choice.cpn",
+  "status": "explored",
+  "nodes": 32,
+  "arcs": 80,
+  "dead": 1,
+  "timed": false,
+  "places": 3,
+  "transitions": 2,
+  "seconds": 0.0027045999995607417,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "32",
+    "32"
+   ],
+   "arcs": [
+    "80",
+    "80"
+   ],
+   "scc_nodes": [
+    "32",
+    "32"
+   ],
+   "scc_arcs": [
+    "80",
+    "80"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "CPNpy/simple_transfer.cpn",
+  "status": "explored",
+  "nodes": 6,
+  "arcs": 7,
+  "dead": 1,
+  "timed": false,
+  "places": 2,
+  "transitions": 1,
+  "seconds": 0.0008531999992555939,
+  "oracle": "agree",
+  "oracle_detail": {
+   "nodes": [
+    "6",
+    "6"
+   ],
+   "arcs": [
+    "7",
+    "7"
+   ],
+   "scc_nodes": [
+    "6",
+    "6"
+   ],
+   "scc_arcs": [
+    "7",
+    "7"
+   ],
+   "dead": [
+    "1",
+    "1"
+   ],
+   "home": [
+    "1",
+    "1"
+   ]
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "CPNpy/timed_conveyor.cpn",
+  "status": "explored",
+  "nodes": 8,
+  "arcs": 12,
+  "dead": 1,
+  "timed": true,
+  "places": 2,
+  "transitions": 1,
+  "seconds": 0.0012011999997412204,
+  "oracle": "contained",
+  "oracle_detail": {
+   "nodes": [
+    8,
+    8
+   ],
+   "arcs": [
+    12,
+    12
+   ],
+   "dead": [
+    1,
+    1
+   ],
+   "missing_arcs": 0
+  },
+  "oracle_errors": {}
+ },
+ {
+  "id": "CPNpy/plane_boarding.cpn",
+  "status": "refused",
+  "reason": "myNet/Move up: time inscription '@++exponential(8.0)' is not supported (integer delays @+d only)",
+  "seconds": 0.013012299999900279
+ }
+]

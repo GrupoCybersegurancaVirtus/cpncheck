@@ -814,7 +814,7 @@ class CPNModelChecker:
             "val CPNCHECK_RESULTS = [",
             ",\n".join(f'  ("{k}", {v})' for k, v in queries.items()),
             "];",
-            'val CPNCHECK_REPORT = String.concat (map (fn (k, v) => k ^ "=" ^ v '
+            'val CPNCHECK_REPORT = String.concat (map (fn (cpnq_k, cpnq_v) => cpnq_k ^ "=" ^ cpnq_v '
             '^ "\\n") CPNCHECK_RESULTS);',
             "print CPNCHECK_REPORT;",
             "CPNCHECK_REPORT;",

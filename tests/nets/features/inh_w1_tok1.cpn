@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<workspaceElements><cpnet><globbox><color id="ID101"><id>UNIT</id><unit/></color>
+<color id="ID102"><id>INT</id><int/></color>
+<var id="ID103"><type><id>INT</id></type><id>n</id></var></globbox><page id="ID1"><pageattr name="Top"/>
+<place id="ID1001"><text>C</text><type><text>INT</text></type><initmark><text>1`0</text></initmark></place>
+<place id="ID1002"><text>H</text><type><text>UNIT</text></type><initmark><text>1`()</text></initmark></place>
+<trans id="ID2001"><text>Tick</text><cond><text>[n &lt; 3]</text></cond></trans>
+<trans id="ID2002"><text>Drain</text><cond><text></text></cond></trans>
+<place id="ID1003"><text>Sink</text><type><text>UNIT</text></type></place>
+<arc id="ID3001" orientation="PtoT"><transend idref="ID2001"/><placeend idref="ID1001"/><annot><text>n</text></annot></arc>
+<arc id="ID3002" orientation="TtoP"><transend idref="ID2001"/><placeend idref="ID1001"/><annot><text>n+1</text></annot></arc>
+<arc id="ID3003" orientation="Inhibitor"><transend idref="ID2001"/><placeend idref="ID1002"/><annot><text>1`()</text></annot></arc>
+<arc id="ID3004" orientation="PtoT"><transend idref="ID2002"/><placeend idref="ID1002"/><annot><text>()</text></annot></arc>
+<arc id="ID3005" orientation="TtoP"><transend idref="ID2002"/><placeend idref="ID1003"/><annot><text>()</text></annot></arc>
+</page><instances><instance id="ID2" page="ID1"/></instances></cpnet></workspaceElements>

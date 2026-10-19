@@ -41,7 +41,8 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .colourset import Declarations
-from .cpnml import (Delayed, IndexValue, MLError, MultiSet, Parser, Stamped,
+from .cpnml import (ConValue, Delayed, IndexValue, MLError, MultiSet, Parser,
+                    Stamped, sort_tokens,
                     _delay,
                     TimedToken, compile_expression, free_variables,
                     match_pattern, parse_expression, parse_multiset,
@@ -71,6 +72,9 @@ def _canon(value):
     """
     if isinstance(value, (IndexValue, TimedToken, Delayed, Stamped)):
         return value
+    if isinstance(value, ConValue):
+        # A constructed value (Data (1, "COL")) keeps its constructor.
+        return ConValue(value[0], _canon(value[1]))
     if isinstance(value, list):
         return tuple(_canon(v) for v in value)
     if isinstance(value, tuple):
@@ -96,6 +100,31 @@ def _tokens(number, value) -> List[Any]:
             out.extend([_canon(element)] * (count * number))
         return out
     return [_canon(value)] * number
+
+
+# Function to read a list value as the multiset it stands for.
+def _as_tokens(value, admits) -> Any:
+    """A list of tokens as a multiset, when the place's type says so.
+
+    In CPN Tools ``'a ms`` is ``'a list``: ``[a, b]`` or ``map f xs`` on an
+    arc of a place of colour set ``E`` is the multiset of the elements. A
+    tuple that is not itself a value of the place's colour set, but whose
+    elements all are, is read that way.
+
+    Args:
+        value: What the inscription evaluated to.
+        admits (callable): ``value -> bool``, the place's type test.
+
+    Returns:
+        The value, or a multiset of its elements.
+    """
+    if type(value) is tuple and not admits(value) and \
+            all(admits(v) for v in value):
+        out: Dict[Any, int] = {}
+        for v in value:
+            out[v] = out.get(v, 0) + 1
+        return MultiSet(out)
+    return value
 
 
 #: The binding entry recording which timestamps a timed occurrence removes
@@ -487,9 +516,9 @@ class ColouredNet:
             index (dict): Place gid to index.
 
         Raises:
-            UnsupportedNet: When something will not compile, when the
-                transition has no input arc, or when a free variable has no
-                finite colour set to range over and no guard defining it.
+            UnsupportedNet: When something will not compile, or when a free
+                variable has no finite colour set to range over and no guard
+                defining it.
         """
         where = f"{t['page']}/{t['name']}"
         guard = self.compile_guard(t["guard_text"])
@@ -500,19 +529,34 @@ class ColouredNet:
         t["action"], t["code_outputs"], code_trees = self._compile_code(t, where)
 
         t["in"], t["in_expr"] = [], []
+        #: Per timed input place, a delay ``d`` from ``x @+ d`` on the input
+        #: arc: a token stamped s may be taken from s - d on (CPN Tools).
+        t["in_pre"] = {}
         expr_trees = []
         for g, e in t["in_raw"]:
             if "@" in e and index[g] in self.timed_places:
-                raise UnsupportedNet(f"{where}: input arc {e.strip()!r}: time "
-                                     "inscriptions on input arcs are not "
-                                     "supported")
+                try:
+                    e, pre_text = _split_arc_delay(e)
+                    if pre_text is None:
+                        raise MLError("only x @+ d is allowed on an input arc")
+                    if index[g] in t["in_pre"]:
+                        raise MLError("two time inscriptions on input arcs "
+                                      "from one place")
+                    pre_tree = parse_expression(pre_text, self.symbols)
+                    t["in_pre"][index[g]] = compile_expression(
+                        pre_tree, self.env, self.fields)
+                    expr_trees.append(pre_tree)
+                except MLError as exc:
+                    raise UnsupportedNet(f"{where}: input arc {e.strip()!r}: "
+                                         f"time inscription: {exc}")
             try:
                 terms = parse_pattern_multiset(e, self.symbols)
             except UnsupportedNet as not_a_pattern:
                 # Not a pattern: an expression over variables bound elsewhere,
                 # evaluated once the binding is complete.
                 try:
-                    code, trees = self._compile_input_expression(e)
+                    code, trees = self._compile_input_expression(
+                        e, self._admits[index[g]])
                 except UnsupportedNet as exc:
                     raise UnsupportedNet(f"{not_a_pattern}; as an expression: "
                                          f"{exc}")
@@ -528,9 +572,6 @@ class ColouredNet:
             out_trees.extend(trees)
         t["out"] = compiled_out
 
-        if not t["in"] and not t["in_expr"]:
-            raise UnsupportedNet(f"{where} has no input arc "
-                                 "(it would be enabled forever)")
 
         bound = set()
         for _pidx, terms in t["in"]:
@@ -545,6 +586,8 @@ class ColouredNet:
                 needs[pidx] += count
                 flat.extend([(pidx, pattern)] * count)
         t["needs"] = dict(needs)
+        t["inhibit"] = tuple(index[g] for g in t.get("inhibit_raw", ()))
+        t["reset"] = tuple(index[g] for g in t.get("reset_raw", ()))
         t["flat_in"] = flat
 
         # The code segment's outputs are bound when it runs, not enumerated.
@@ -668,11 +711,12 @@ class ColouredNet:
         return marking[-1] if self.timed else 0
 
     # Method to compile an input arc that is not a pattern.
-    def _compile_input_expression(self, text: str):
+    def _compile_input_expression(self, text: str, admits=lambda v: True):
         """Compile an input inscription as an expression to evaluate later.
 
         Args:
             text (str): The inscription.
+            admits (callable): The place's type test (see :func:`_as_tokens`).
 
         Returns:
             tuple: ``(code, expression trees)``; ``code(env)`` gives the
@@ -687,7 +731,7 @@ class ColouredNet:
             out: Dict[Any, int] = {}
             for count, code in terms:
                 number = count if isinstance(count, int) else count(env)
-                for token in _tokens(number, code(env)):
+                for token in _tokens(number, _as_tokens(code(env), admits)):
                     if isinstance(token, (Delayed, Stamped)):
                         raise MLError("an input arc cannot carry a time "
                                       "inscription")
@@ -731,8 +775,8 @@ class ColouredNet:
             if token is not None and i in override:
                 tokens = [_canon(token)]
             else:
-                tokens = self.parse_initial_marking(pl["initmark"])
-            marking.append(tuple(sorted(self._stamp_initial(i, tokens))))
+                tokens = self.parse_initial_marking(pl["initmark"], i)
+            marking.append(sort_tokens(self._stamp_initial(i, tokens)))
         if self.timed:
             marking.append(0)
         return tuple(marking)
@@ -789,7 +833,8 @@ class ColouredNet:
         Returns:
             list: ``(transition index, binding key, binding)`` triples.
         """
-        candidates = set()
+        # A transition without input arcs is a candidate in every marking.
+        candidates = set(self._sources)
         for pidx in range(len(self.places)):
             if marking[pidx]:
                 candidates.update(self.consumers.get(pidx, ()))
@@ -798,6 +843,8 @@ class ColouredNet:
         for ti in sorted(candidates):
             t = self.transitions[ti]
             if any(len(marking[p]) < n for p, n in t["needs"].items()):
+                continue
+            if any(marking[p] for p in t["inhibit"]):
                 continue
             for env, ready in self._bindings(marking, t):
                 key = tuple(sorted(env.items()))
@@ -826,13 +873,15 @@ class ColouredNet:
             the choice under :data:`REMOVED`.
         """
         ti, _key, env, ready = found
+        t = self.transitions[ti]
         per_value = []
-        for pidx, wanted in sorted(self._taken(self.transitions[ti], env).items()):
+        for pidx, wanted in sorted(self._taken(t, env).items()):
             if pidx not in self.timed_places:
                 continue
+            pre = self._preponement(t, pidx, env)
             for value, count in sorted(wanted.items(), key=repr):
                 stamps = sorted(tok[1] for tok in marking[pidx]
-                                if tok[0] == value and tok[1] <= now)
+                                if tok[0] == value and tok[1] - pre <= now)
                 options = sorted(set(itertools.combinations(stamps, count)))
                 per_value.append([(pidx, value, o) for o in options])
         out = []
@@ -883,8 +932,8 @@ class ColouredNet:
         clock = marking[-1]
         view = list(marking)
         for pidx in self.timed_places:
-            view[pidx] = tuple(sorted(
-                TimedToken(tok[0], max(0, tok[1] - clock)) for tok in marking[pidx]))
+            view[pidx] = sort_tokens(
+                TimedToken(tok[0], max(0, tok[1] - clock)) for tok in marking[pidx])
         return tuple(view)
 
     # Method to compute when the tokens a binding takes are all ready.
@@ -906,17 +955,41 @@ class ColouredNet:
         clock = marking[-1]
         ready = clock
         if REMOVED in env:
-            for _pidx, _value, stamps in env[REMOVED]:
-                ready = max([ready, *stamps])
+            for pidx, _value, stamps in env[REMOVED]:
+                pre = self._preponement(t, pidx, env)
+                ready = max([ready, *(s - pre for s in stamps)])
             return ready
         for pidx, wanted in self._taken(t, env).items():
             if pidx not in self.timed_places:
                 continue
+            pre = self._preponement(t, pidx, env)
             for value, count in wanted.items():
                 stamps = sorted(tok[1] for tok in marking[pidx]
                                 if tok[0] == value)
-                ready = max(ready, stamps[count - 1])
+                ready = max(ready, stamps[count - 1] - pre)
         return ready
+
+    # Method to give how early tokens may be taken from an input place.
+    def _preponement(self, t, pidx: int, env) -> int:
+        """``d`` of ``x @+ d`` on the input arc from a place, or 0.
+
+        Args:
+            t (dict): The transition.
+            pidx (int): The input place.
+            env (dict): The binding.
+
+        Returns:
+            int: The delay by which tokens may be taken early.
+        """
+        code = t.get("in_pre", {}).get(pidx)
+        if code is None:
+            return 0
+        clean = {k: v for k, v in env.items() if k != REMOVED}
+        try:
+            return _model_time_of(code(clean), t["name"])
+        except MLError as exc:
+            raise UnsupportedNet(f"{t['name']}: input arc time inscription: "
+                                 f"{exc}")
 
     # Method to list what a binding takes from each place.
     def _taken(self, t, env) -> Dict[int, collections.Counter]:
@@ -932,7 +1005,7 @@ class ColouredNet:
         out: Dict[int, collections.Counter] = collections.defaultdict(
             collections.Counter)
         for pidx, pattern in t["flat_in"]:
-            out[pidx][_instantiate(pattern, env)] += 1
+            out[pidx][_instantiate(pattern, env, self.fields)] += 1
         for pidx, code in t["in_expr"]:
             for value, count in code(env).items():
                 out[pidx][value] += count
@@ -1039,7 +1112,7 @@ class ColouredNet:
             pidx, pattern = inputs[i]
             available = collections.Counter(values[pidx])
             available.subtract(used.get(pidx, {}))
-            for token in sorted(set(values[pidx])):
+            for token in sort_tokens(set(values[pidx])):
                 if available[token] <= 0:
                     continue
                 env2 = match_pattern(pattern, token, env, self.fields)
@@ -1119,10 +1192,14 @@ class ColouredNet:
                 stamps = chosen.get((pidx, value))
                 if stamps is None:
                     # No choice given (a run, not a graph): the oldest go.
+                    pre = self._preponement(t, pidx, env)
                     stamps = sorted(tok[1] for tok in new[pidx]
-                                    if tok[0] == value and tok[1] <= now)[:count]
+                                    if tok[0] == value and tok[1] - pre <= now
+                                    )[:count]
                 for stamp in stamps:
                     new[pidx].remove(TimedToken(value, stamp))
+        for pidx in t["reset"]:
+            new[pidx] = []                      # a reset arc empties its place
         if t["action"] is not None:
             env = dict(env)
             try:
@@ -1148,7 +1225,8 @@ class ColouredNet:
             for count, code in terms:
                 try:
                     number = count if isinstance(count, int) else count(env)
-                    tokens = _tokens(number, code(env))
+                    tokens = _tokens(number, _as_tokens(
+                        code(env), self._admits[pidx]))
                 except MLError as exc:
                     raise UnsupportedNet(f"{t['name']}: output arc: {exc}")
                 except Exception as exc:                       # noqa: BLE001
@@ -1157,7 +1235,7 @@ class ColouredNet:
                 for tok in tokens:
                     new[pidx].append(self._produced(pidx, tok, now + delay,
                                                     t["name"]))
-        out = [tuple(sorted(tokens)) for tokens in new]
+        out = [sort_tokens(tokens) for tokens in new]
         if self.timed:
             out.append(now)
         return tuple(out)
@@ -1259,18 +1337,38 @@ class ColouredNet:
             for tid, tr in page["transitions"].items():
                 if tr["subpage"]:
                     continue
-                ins, outs = [], []
+                ins, outs, inhibit, reset = [], [], [], []
                 for a in page["arcs"]:
                     if a["trans"] != tid:
                         continue
                     arc = (pid_of[a["place"]], a["expr"])
+                    if a["orient"] in ("PtoT", "TtoP", "BOTHDIR") and                             not (a["expr"] or "").strip():
+                        raise UnsupportedNet(
+                            f"{page['name']}/{tr['name'] or tid}: an arc "
+                            "without an inscription; CPN Tools does not "
+                            "compile the transition (it can never occur "
+                            "there) -- give the arc its inscription")
                     # A double arc is an input and an output arc with the
                     # same inscription: the token is taken and put back.
                     if a["orient"] in ("PtoT", "BOTHDIR"):
                         ins.append(arc)
                     if a["orient"] in ("TtoP", "BOTHDIR"):
                         outs.append(arc)
-                    if a["orient"] not in ("PtoT", "TtoP", "BOTHDIR"):
+                    # CPN Tools 4's inhibitor and reset arcs, as its
+                    # simulator runs them: an inhibitor arc needs the place
+                    # empty and a reset arc empties it, whatever multiset
+                    # the inscription names (checked against CPN Tools).
+                    if a["orient"] in ("Inhibitor", "Reset"):
+                        if not (a["expr"] or "").strip():
+                            raise UnsupportedNet(
+                                f"{page['name']}/{tr['name']}: an "
+                                f"{a['orient'].lower()} arc without an "
+                                "inscription; CPN Tools does not compile the "
+                                "transition (it can never occur there)")
+                        (inhibit if a["orient"] == "Inhibitor" else
+                         reset).append(pid_of[a["place"]])
+                    if a["orient"] not in ("PtoT", "TtoP", "BOTHDIR",
+                                           "Inhibitor", "Reset"):
                         raise UnsupportedNet(
                             f"{page['name']}/{tr['name']}: arc orientation "
                             f"{a['orient']!r} is not supported")
@@ -1280,6 +1378,7 @@ class ColouredNet:
                               "priority_text": tr.get("priority"),
                               "code_text": tr.get("code"),
                               "in_raw": ins, "out_raw": outs,
+                              "inhibit_raw": inhibit, "reset_raw": reset,
                               "instance": instance,
                               "ml": f"{page['ml']}'{tr['ml']}"})
             for tid, tr in page["transitions"].items():
@@ -1307,23 +1406,38 @@ class ColouredNet:
         self.timed_places = {i for i, p in enumerate(self.places)
                              if self._is_timed_colset(p.get("colset"))}
         self.timed = bool(self.timed_places)
+        #: Per place, the test telling one of its tokens from a list of them.
+        self._admits = [
+            (lambda v, c=p.get("colset"): self.declarations.admits(v, c))
+            for p in self.places]
         for t in trans:
             self._compile_transition(t, index)
             self.transitions.append(t)
         self.uses_priorities = len({t["priority"] for t in self.transitions}) > 1
+        #: Inhibitor and reset arcs make a transition depend on a place it
+        #: takes nothing from; partial-order reduction is not used with them.
+        self.special_arcs = any(t["inhibit"] or t["reset"]
+                                for t in self.transitions)
+        #: Transitions with no input arc (enabled whenever their guard is).
+        self._sources = [i for i, t in enumerate(self.transitions)
+                         if not t["in"] and not t["in_expr"]]
         #: Whether partial-order reduction applies: independence does not
         #: survive a global clock or priorities.
-        self.reducible = not self.timed and not self.uses_priorities
+        self.reducible = (not self.timed and not self.uses_priorities
+                          and not self.special_arcs and not self._sources)
 
 
 
 
     # Method to evaluate a place's initial marking.
-    def parse_initial_marking(self, text: Optional[str]) -> List[Any]:
+    def parse_initial_marking(self, text: Optional[str],
+                              pidx: Optional[int] = None) -> List[Any]:
         """Evaluate a place's initial-marking inscription.
 
         Args:
             text (str, optional): The inscription, possibly empty.
+            pidx (int, optional): The place, whose colour set tells a token
+                from a list of tokens.
 
         Returns:
             list: The tokens.
@@ -1339,7 +1453,9 @@ class ColouredNet:
         for count, value in terms:
             try:
                 number = count if isinstance(count, int) else count({})
-                tokens.extend(_tokens(number, value({})))
+                admits = (self._admits[pidx] if pidx is not None
+                          else (lambda v: True))
+                tokens.extend(_tokens(number, _as_tokens(value({}), admits)))
             except MLError as exc:
                 raise UnsupportedNet(f"initial marking {text!r}: {exc}")
         return tokens
@@ -1377,16 +1493,16 @@ def _name_wildcards(terms, where):
         if tag == "pcons":
             return ("pcons", rename(pattern[1]), rename(pattern[2]))
         if tag == "pcon":
-            return ("pcon", pattern[1], rename(pattern[2]))
+            return ("pcon", pattern[1], rename(pattern[2])) + tuple(pattern[3:])
         if tag == "precord":
-            return ("precord", [(lab, rename(p)) for lab, p in pattern[1]])
+            return ("precord", [(lab, rename(p)) for lab, p in pattern[1]])                 + tuple(pattern[2:])
         return pattern
 
     return [(count, rename(pattern)) for count, pattern in terms]
 
 
 # Function to rebuild the token a pattern denotes under a complete binding.
-def _instantiate(pattern, env):
+def _instantiate(pattern, env, fields=None):
     """Evaluate a pattern back into the token it consumes.
 
     Args:
@@ -1405,9 +1521,24 @@ def _instantiate(pattern, env):
     if tag == "plit":
         return pattern[1]
     if tag in ("ptuple", "plist"):
-        return tuple(_instantiate(p, env) for p in pattern[1])
+        return tuple(_instantiate(p, env, fields) for p in pattern[1])
     if tag == "pcons":
-        return (_instantiate(pattern[1], env),) + _instantiate(pattern[2], env)
+        return ((_instantiate(pattern[1], env, fields),)
+                + _instantiate(pattern[2], env, fields))
     if tag == "pcon":
-        return IndexValue(pattern[1], _instantiate(pattern[2], env))
+        payload = _instantiate(pattern[2], env, fields)
+        if pattern[3:] == ("data",):
+            return ConValue(pattern[1], payload)
+        return IndexValue(pattern[1], payload)
+    if tag == "precord":
+        # A record in declared field order; one with "..." leaves fields out
+        # and cannot be rebuilt.
+        positions = [(fields or {}).get(label) for label, _p in pattern[1]]
+        if (len(pattern) > 2 and pattern[2]) or None in positions or                 sorted(positions) != list(range(len(positions))):
+            raise UnsupportedNet("a record pattern on an input arc must name "
+                                 "every field of the record")
+        values = [None] * len(positions)
+        for (label, sub), at in zip(pattern[1], positions):
+            values[at] = _instantiate(sub, env, fields)
+        return tuple(values)
     raise UnsupportedNet(f"cannot rebuild the token matched by {tag!r}")

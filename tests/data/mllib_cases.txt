@@ -242,3 +242,37 @@ BOOL.mkstr true
 BOOL.ord true
 E.col 7
 INT.size ()
+
+# --- multisets are lists (in CPN Tools 'a ms = 'a list) ---------------------
+length (1`a ++ 2`b)
+bag:map (fn x => x) (E.all ())
+hd (U.all ())
+List.nth (E.all (), 1)
+mem (E.all ()) b
+bag:List.filter (fn x => x <> b) (E.all ())
+
+# --- strings with escapes -------------------------------------------------
+String.size "a\"b"
+String.size "x\ny"
+"tab\there"
+explode "a\b"
+
+# --- sequences, references, curried cases, flexible records ---------------
+(1; 2; 3)
+let val r = ref 3 in !r end
+let val r = ref 3 in !r + 1 end
+let fun f x [] = x | f x (y::ys) = f (x + y) ys in f 0 [1, 2, 3] end
+let fun g [] _ = 0 | g (x::xs) k = x * k + g xs k in g [1, 2] 10 end
+(fn ({x, ...} : R) => x) {x = 3, y = b}
+(fn ({y = q, ...} : R) => q) {x = 3, y = b}
+let val {x = p, ...} = {x = 5, y = c} : R in p end
+
+# --- exceptions -----------------------------------------------------------
+hd ([] : int list) handle Empty => 0
+(1 div 0) handle Div => 9
+valOf (NONE : int option) handle Option => 4
+listsub [1] [2] handle Subtract => [0]
+(raise Fail "abc") handle Fail m => String.size m
+((raise Fail "abc") : int) handle Empty => 1
+List.nth ([1, 2], 7) handle Subscript => ~1
+(case 3 of 4 => 1) handle Match => 2
