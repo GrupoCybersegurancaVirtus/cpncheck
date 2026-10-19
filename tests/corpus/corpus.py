@@ -157,6 +157,24 @@ def explore(path: str, max_nodes: int) -> Dict[str, Any]:
             "seconds": time.perf_counter() - t0}
 
 
+#: What Access/CPN raises when CPN Tools itself refuses a net: its compiler,
+#: or its name check (a place called ``20`` has no ML name for ``Mark``).
+_REFUSALS = ("CheckerException", "LocalCheckFailed")
+
+
+# Function to tell whether CPN Tools refused the net itself.
+def _rejected(errors) -> bool:
+    """Whether the oracle's errors say CPN Tools does not accept the file.
+
+    Args:
+        errors: The oracle's error record.
+
+    Returns:
+        bool: True for a refusal by CPN Tools, not a failure of the driver.
+    """
+    return any(word in str(errors) for word in _REFUSALS)
+
+
 # Function to compare an explored net with CPN Tools.
 def against_cpntools(path: str, timed: bool, max_nodes: int, oracle) -> Dict[str, Any]:
     """CPN Tools' verdict on the net's occurrence graph.
@@ -178,6 +196,9 @@ def against_cpntools(path: str, timed: bool, max_nodes: int, oracle) -> Dict[str
         if timed:
             r = compare_graph_containment(path, oracle=oracle, max_nodes=max_nodes,
                                           timeout=900, compat=CPNTOOLS_401)
+            if _rejected(r.get("errors")):
+                return {"oracle": "rejected by CPN Tools",
+                        "oracle_errors": r.get("errors")}
             return {"oracle": "contained" if r["contained"] else "DIFFER",
                     "oracle_detail": {k: r.get(k) for k in
                                       ("nodes", "arcs", "dead", "missing_arcs")},
@@ -186,7 +207,7 @@ def against_cpntools(path: str, timed: bool, max_nodes: int, oracle) -> Dict[str
         # bounds, dead/live and fair transitions.
         from cpncheck.oracle import compare_with_oracle
         r = compare_with_oracle(path, oracle=oracle, timeout=900)
-        if "CheckerException" in str(r.get("errors")):
+        if _rejected(r.get("errors")):
             # CPN Tools' own compiler refuses the file: nothing to compare.
             return {"oracle": "rejected by CPN Tools",
                     "oracle_errors": r.get("errors")}

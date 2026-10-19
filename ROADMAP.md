@@ -217,6 +217,12 @@ After that, on the same footing:
   `EV (INV a)`), which do not treat dead markings vacuously as the basic
   evaluator does. 49 queries written to tell those readings apart agree
   with CPN Tools (`tests/test_askctl_input.py`).
+* **What the budget hides.** With 300 000 markings instead of 20 000, two
+  of the 17 corpus nets over budget finish (`Pn model one`, 188 390
+  markings in 17 s; `Pn model two`, timed, 279 016); the other ten measured
+  are still growing -- the book's protocols, whose network places have no
+  bound. CPN Tools refuses `Pn model one` itself (a place named `20` has no
+  ML name), so it has no oracle verdict.
 * **Exploration about 40% faster** on timed nets (token counts once per
   marking, timestamps cached), with identical graphs.
 
