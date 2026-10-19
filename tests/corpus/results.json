@@ -8,7 +8,7 @@
   "timed": false,
   "places": 7,
   "transitions": 5,
-  "seconds": 0.0033457999998063315,
+  "seconds": 0.003431500000260712,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -34,6 +34,158 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "5",
+    "5"
+   ],
+   "fair_tis": [
+    "5",
+    "5"
+   ],
+   "just_tis": [
+    "5",
+    "5"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "6",
+    "6"
+   ],
+   "ms_up_0": [
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "1",
+    "1"
+   ],
+   "ms_up_1": [
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "6",
+    "6"
+   ],
+   "ms_up_2": [
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "0",
+    "0"
+   ],
+   "bound_up_3": [
+    "1",
+    "1"
+   ],
+   "ms_up_3": [
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7",
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "1",
+    "1"
+   ],
+   "ms_up_4": [
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL \")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "1",
+    "1"
+   ],
+   "ms_up_5": [
+    "1`2++1`3++1`4++1`5++1`6++1`7",
+    "1`2++1`3++1`4++1`5++1`6++1`7"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_6": [
+    "0",
+    "0"
+   ],
+   "bound_up_6": [
+    "1",
+    "1"
+   ],
+   "ms_up_6": [
+    "1`2++1`3++1`4++1`5++1`6++1`7",
+    "1`2++1`3++1`4++1`5++1`6++1`7"
+   ],
+   "ms_lo_6": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -47,7 +199,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 3.0430284000003667
+  "seconds": 2.9447391000003336
  },
  {
   "id": "cpnbook/3-1UnionRecord.cpn",
@@ -58,7 +210,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 3.8108053000005384
+  "seconds": 3.8137497999996413
  },
  {
   "id": "cpnbook/3-7Queues.cpn",
@@ -69,7 +221,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 4.657760399999461
+  "seconds": 5.5236829000004946
  },
  {
   "id": "cpnbook/3-18Functions.cpn",
@@ -80,7 +232,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 2.944134999999733
+  "seconds": 3.5648528000001534
  },
  {
   "id": "cpnbook/3-19Polymorphic.cpn",
@@ -91,7 +243,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 3.1176499000002877
+  "seconds": 3.3366611999999805
  },
  {
   "id": "cpnbook/3-20Recursion.cpn",
@@ -102,7 +254,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 5.321055800000067
+  "seconds": 5.323581799999374
  },
  {
   "id": "cpnbook/5-1HierarhicalProtocol.cpn",
@@ -113,7 +265,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 2.5395641000004616
+  "seconds": 2.8970992000004117
  },
  {
   "id": "cpnbook/5-8Instances.cpn",
@@ -124,7 +276,7 @@
   "timed": false,
   "places": 8,
   "transitions": 5,
-  "seconds": 2.689734900000076
+  "seconds": 3.7966850000002523
  },
  {
   "id": "cpnbook/5-19TwoReceivers.cpn",
@@ -135,7 +287,7 @@
   "timed": false,
   "places": 14,
   "transitions": 8,
-  "seconds": 3.2237692999997307
+  "seconds": 4.28714140000011
  },
  {
   "id": "cpnbook/5-24TwoReceivers.cpn",
@@ -146,7 +298,7 @@
   "timed": false,
   "places": 10,
   "transitions": 6,
-  "seconds": 3.968005599999742
+  "seconds": 4.897405999999137
  },
  {
   "id": "cpnbook/5-30MultipleReceivers.cpn",
@@ -157,7 +309,7 @@
   "timed": false,
   "places": 9,
   "transitions": 5,
-  "seconds": 8.144246699999712
+  "seconds": 9.980979199999638
  },
  {
   "id": "cpnbook/7-2LimitProtocol.cpn",
@@ -168,7 +320,7 @@
   "timed": false,
   "places": 9,
   "transitions": 5,
-  "seconds": 1.1462910000000193,
+  "seconds": 1.4395221000004312,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -194,6 +346,190 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "false",
+    "false"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "2",
+    "2"
+   ],
+   "fair_tis": [
+    "2",
+    "2"
+   ],
+   "just_tis": [
+    "2",
+    "2"
+   ],
+   "bound_lo_0": [
+    "6",
+    "6"
+   ],
+   "bound_up_0": [
+    "6",
+    "6"
+   ],
+   "ms_up_0": [
+    "1`(1,\"COL\")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL\")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "ms_lo_0": [
+    "1`(1,\"COL\")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")",
+    "1`(1,\"COL\")++1`(2,\"OUR\")++1`(3,\"ED \")++1`(4,\"PET\")++1`(5,\"RI \")++1`(6,\"NET\")"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "3",
+    "3"
+   ],
+   "ms_up_1": [
+    "3`(1,\"COL\")++3`(2,\"OUR\")++3`(3,\"ED \")++3`(4,\"PET\")++3`(5,\"RI \")++3`(6,\"NET\")",
+    "3`(1,\"COL\")++3`(2,\"OUR\")++3`(3,\"ED \")++3`(4,\"PET\")++3`(5,\"RI \")++3`(6,\"NET\")"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "1",
+    "1"
+   ],
+   "bound_up_2": [
+    "1",
+    "1"
+   ],
+   "ms_up_2": [
+    "1`\"\"++1`\"COL\"++1`\"COLOUR\"++1`\"COLOURED \"++1`\"COLOURED PET\"++1`\"COLOURED PETRI \"++1`\"COLOURED PETRI NET\"",
+    "1`\"\"++1`\"COL\"++1`\"COLOUR\"++1`\"COLOURED \"++1`\"COLOURED PET\"++1`\"COLOURED PETRI \"++1`\"COLOURED PETRI NET\""
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "1",
+    "1"
+   ],
+   "bound_up_3": [
+    "1",
+    "1"
+   ],
+   "ms_up_3": [
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7",
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "3",
+    "3"
+   ],
+   "ms_up_4": [
+    "3`(1,\"COL\")++3`(2,\"OUR\")++3`(3,\"ED \")++3`(4,\"PET\")++3`(5,\"RI \")++3`(6,\"NET\")",
+    "3`(1,\"COL\")++3`(2,\"OUR\")++3`(3,\"ED \")++3`(4,\"PET\")++3`(5,\"RI \")++3`(6,\"NET\")"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "3",
+    "3"
+   ],
+   "ms_up_5": [
+    "3`2++3`3++3`4++3`5++3`6++3`7",
+    "3`2++3`3++3`4++3`5++3`6++3`7"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_6": [
+    "0",
+    "0"
+   ],
+   "bound_up_6": [
+    "3",
+    "3"
+   ],
+   "ms_up_6": [
+    "3`2++3`3++3`4++3`5++3`6++3`7",
+    "3`2++3`3++3`4++3`5++3`6++3`7"
+   ],
+   "ms_lo_6": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_7": [
+    "1",
+    "1"
+   ],
+   "bound_up_7": [
+    "1",
+    "1"
+   ],
+   "ms_up_7": [
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7",
+    "1`1++1`2++1`3++1`4++1`5++1`6++1`7"
+   ],
+   "ms_lo_7": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_8": [
+    "0",
+    "0"
+   ],
+   "bound_up_8": [
+    "3",
+    "3"
+   ],
+   "ms_up_8": [
+    "3`()",
+    "3`()"
+   ],
+   "ms_lo_8": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -207,7 +543,7 @@
   "timed": true,
   "places": 8,
   "transitions": 5,
-  "seconds": 1.633700399999725
+  "seconds": 1.7639684999994643
  },
  {
   "id": "cpnbook/10-19TimedStateSpaces.cpn",
@@ -218,25 +554,25 @@
   "timed": true,
   "places": 11,
   "transitions": 5,
-  "seconds": 2.481190499999684
+  "seconds": 2.51002569999946
  },
  {
   "id": "cpnbook/12-1PerformanceProtocol.cpn",
   "status": "refused",
   "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
-  "seconds": 0.0066195000008519855
+  "seconds": 0.006154299999252544
  },
  {
   "id": "cpnbook/12-2-6PerformanceProtocol.cpn",
   "status": "refused",
   "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
-  "seconds": 0.006019000000378583
+  "seconds": 0.006031400000210851
  },
  {
   "id": "cpnbook/12-7PerformanceProtocol.cpn",
   "status": "refused",
   "reason": "DataPacket Arrives: output arc: unbound name 'IntInf.toInt'",
-  "seconds": 0.0068701999998666
+  "seconds": 0.006954200000109267
  },
  {
   "id": "dynamic-coloured-petri-net/Pn model one.cpn",
@@ -247,7 +583,7 @@
   "timed": false,
   "places": 36,
   "transitions": 18,
-  "seconds": 2.627440299999762
+  "seconds": 2.533201999999619
  },
  {
   "id": "dynamic-coloured-petri-net/Pn model two.cpn",
@@ -258,7 +594,7 @@
   "timed": true,
   "places": 37,
   "transitions": 19,
-  "seconds": 3.894444300000032
+  "seconds": 3.9858672000000297
  },
  {
   "id": "dynamic-coloured-petri-net/pn model three.cpn",
@@ -269,7 +605,7 @@
   "timed": true,
   "places": 49,
   "transitions": 25,
-  "seconds": 10.38166639999963
+  "seconds": 12.131033300000126
  },
  {
   "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-One.cpn",
@@ -280,25 +616,25 @@
   "timed": true,
   "places": 17,
   "transitions": 11,
-  "seconds": 6.100465600000462
+  "seconds": 8.090394699999706
  },
  {
   "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Two.cpn",
   "status": "refused",
   "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.011990199999672768
+  "seconds": 0.009083400000235997
  },
  {
   "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Three-A.cpn",
   "status": "refused",
   "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.010835600000064005
+  "seconds": 0.009353800000099
  },
  {
   "id": "BuildIT-Business-Process-and-Workflow-Management/Scenario-Three-B.cpn",
   "status": "refused",
   "reason": "assignrandomarrivaltime: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.010265600000820996
+  "seconds": 0.009539499999846157
  },
  {
   "id": "SED_Projeto02/modelo_cpn_tools.cpn",
@@ -309,7 +645,7 @@
   "timed": false,
   "places": 13,
   "transitions": 19,
-  "seconds": 0.010971699999572593,
+  "seconds": 0.01018740000017715,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -335,6 +671,254 @@
    "home": [
     "66",
     "66"
+   ],
+   "R1": [
+    "true",
+    "true"
+   ],
+   "R2": [
+    "false",
+    "false"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "true",
+    "true"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "19",
+    "19"
+   ],
+   "impartial_tis": [
+    "0",
+    "0"
+   ],
+   "fair_tis": [
+    "0",
+    "0"
+   ],
+   "just_tis": [
+    "0",
+    "0"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "2",
+    "2"
+   ],
+   "ms_up_0": [
+    "2`()",
+    "2`()"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "2",
+    "2"
+   ],
+   "ms_up_1": [
+    "2`()",
+    "2`()"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "2",
+    "2"
+   ],
+   "ms_up_2": [
+    "2`()",
+    "2`()"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "0",
+    "0"
+   ],
+   "bound_up_3": [
+    "1",
+    "1"
+   ],
+   "ms_up_3": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "1",
+    "1"
+   ],
+   "ms_up_4": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "1",
+    "1"
+   ],
+   "ms_up_5": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_6": [
+    "0",
+    "0"
+   ],
+   "bound_up_6": [
+    "1",
+    "1"
+   ],
+   "ms_up_6": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_6": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_7": [
+    "0",
+    "0"
+   ],
+   "bound_up_7": [
+    "1",
+    "1"
+   ],
+   "ms_up_7": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_7": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_8": [
+    "0",
+    "0"
+   ],
+   "bound_up_8": [
+    "1",
+    "1"
+   ],
+   "ms_up_8": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_8": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_9": [
+    "0",
+    "0"
+   ],
+   "bound_up_9": [
+    "1",
+    "1"
+   ],
+   "ms_up_9": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_9": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_10": [
+    "0",
+    "0"
+   ],
+   "bound_up_10": [
+    "1",
+    "1"
+   ],
+   "ms_up_10": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_10": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_11": [
+    "0",
+    "0"
+   ],
+   "bound_up_11": [
+    "1",
+    "1"
+   ],
+   "ms_up_11": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_11": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_12": [
+    "0",
+    "0"
+   ],
+   "bound_up_12": [
+    "1",
+    "1"
+   ],
+   "ms_up_12": [
+    "1`()",
+    "1`()"
+   ],
+   "ms_lo_12": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -343,55 +927,55 @@
   "id": "PetriNets_CPN_Workflow/ScrumWorkflow2.cpn",
   "status": "refused",
   "reason": "Estimate tasks: output arc: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.010242399999697227
+  "seconds": 0.014523800000461051
  },
  {
   "id": "sdn-coloredpetrinet-model/finalwork.cpn",
   "status": "refused",
   "reason": "R_NetDevInfor: code segment: unbound name 'ConnManagementLayer.openConnection'",
-  "seconds": 0.004167600000073435
+  "seconds": 0.0428715000007287
  },
  {
   "id": "advanced-topics-cs/ID1179034-part1.cpn",
   "status": "refused",
   "reason": "initial marking '15`()@0.0': model time must be an integer, not 0.0 (real-time nets are not supported)",
-  "seconds": 0.010657599999831291
+  "seconds": 0.017353499999444466
  },
  {
   "id": "advanced-topics-cs/ID1179034-part2.cpn",
   "status": "refused",
   "reason": "initial marking '15`()@0.0': model time must be an integer, not 0.0 (real-time nets are not supported)",
-  "seconds": 0.011066999999457039
+  "seconds": 0.01715070000045671
  },
  {
   "id": "system_engineering/testProject.cpn",
   "status": "refused",
   "reason": "New Page/Ship: an arc without an inscription; CPN Tools does not compile the transition (it can never occur there) -- give the arc its inscription",
-  "seconds": 0.0009829999999055872
+  "seconds": 0.0013692000002265559
  },
  {
   "id": "system_engineering/project2.cpn",
   "status": "refused",
   "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.004946399999425921
+  "seconds": 0.007308499999453488
  },
  {
   "id": "system_engineering/project3.cpn",
   "status": "refused",
   "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.017042000000401458
+  "seconds": 0.014685500000268803
  },
  {
   "id": "system_engineering/project5.cpn",
   "status": "refused",
   "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.014579200000298442
+  "seconds": 0.05351399999926798
  },
  {
   "id": "system_engineering/projectWithSenario.cpn",
   "status": "refused",
   "reason": "startSailing: time inscription: discrete draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.040321700000276905
+  "seconds": 0.05706709999958548
  },
  {
   "id": "db-net-eip-patterns/aggregator.cpn",
@@ -402,7 +986,7 @@
   "timed": false,
   "places": 6,
   "transitions": 5,
-  "seconds": 0.003369600000041828,
+  "seconds": 0.03297810000003665,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -428,6 +1012,142 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "false",
+    "false"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "5",
+    "5"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "5",
+    "5"
+   ],
+   "fair_tis": [
+    "5",
+    "5"
+   ],
+   "just_tis": [
+    "5",
+    "5"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "0",
+    "0"
+   ],
+   "ms_up_0": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "0",
+    "0"
+   ],
+   "ms_up_1": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "0",
+    "0"
+   ],
+   "ms_up_2": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "0",
+    "0"
+   ],
+   "bound_up_3": [
+    "0",
+    "0"
+   ],
+   "ms_up_3": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "0",
+    "0"
+   ],
+   "ms_up_4": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "0",
+    "0"
+   ],
+   "ms_up_5": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -441,7 +1161,7 @@
   "timed": false,
   "places": 6,
   "transitions": 3,
-  "seconds": 0.0030324999997901614,
+  "seconds": 0.0031118000006244984,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -467,6 +1187,142 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "false",
+    "false"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "2",
+    "2"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "3",
+    "3"
+   ],
+   "fair_tis": [
+    "3",
+    "3"
+   ],
+   "just_tis": [
+    "3",
+    "3"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "3",
+    "3"
+   ],
+   "ms_up_0": [
+    "1`13++1`17++1`2",
+    "1`13++1`17++1`2"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "0",
+    "0"
+   ],
+   "ms_up_1": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "0",
+    "0"
+   ],
+   "ms_up_2": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "0",
+    "0"
+   ],
+   "bound_up_3": [
+    "3",
+    "3"
+   ],
+   "ms_up_3": [
+    "1`(13,\"msg1\")++1`(17,\"msg2\")++1`(2,\"msg3\")",
+    "1`(13,\"msg1\")++1`(17,\"msg2\")++1`(2,\"msg3\")"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "3",
+    "3"
+   ],
+   "ms_up_4": [
+    "1`(13,\"msg1\")++1`(17,\"msg2\")++1`(2,\"msg3\")",
+    "1`(13,\"msg1\")++1`(17,\"msg2\")++1`(2,\"msg3\")"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "0",
+    "0"
+   ],
+   "ms_up_5": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -480,7 +1336,7 @@
   "timed": true,
   "places": 3,
   "transitions": 1,
-  "seconds": 0.002337200000511075,
+  "seconds": 0.002261700000417477,
   "oracle": "contained",
   "oracle_detail": {
    "nodes": [
@@ -508,7 +1364,7 @@
   "timed": false,
   "places": 2,
   "transitions": 1,
-  "seconds": 0.0019115000004603644,
+  "seconds": 0.0018344999998589628,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -534,6 +1390,78 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "1",
+    "1"
+   ],
+   "fair_tis": [
+    "1",
+    "1"
+   ],
+   "just_tis": [
+    "1",
+    "1"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "1",
+    "1"
+   ],
+   "ms_up_0": [
+    "1`[\"msg1\",\"msg2\",\"msg3\"]",
+    "1`[\"msg1\",\"msg2\",\"msg3\"]"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "1",
+    "1"
+   ],
+   "ms_up_1": [
+    "1`\"msg1|msg2|msg3\"",
+    "1`\"msg1|msg2|msg3\""
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -542,13 +1470,13 @@
   "id": "db-net-eip-patterns/splitter.cpn",
   "status": "refused",
   "reason": "guard '[obj !=nil]': '=' cannot start an expression",
-  "seconds": 0.0026049000007333234
+  "seconds": 0.0038672000000588014
  },
  {
   "id": "db-net-eip-patterns/throttler.cpn",
   "status": "refused",
   "reason": "get message: output arc: exponential draws a random value; a net that does has no deterministic occurrence graph and is not supported",
-  "seconds": 0.00412999999934982
+  "seconds": 0.004055800000060117
  },
  {
   "id": "db-net-eip-patterns/resequencer.cpn",
@@ -559,7 +1487,7 @@
   "timed": false,
   "places": 7,
   "transitions": 6,
-  "seconds": 0.0036948999995729537,
+  "seconds": 0.0058601000000635395,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -585,6 +1513,158 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "false",
+    "false"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "6",
+    "6"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "6",
+    "6"
+   ],
+   "fair_tis": [
+    "6",
+    "6"
+   ],
+   "just_tis": [
+    "6",
+    "6"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "0",
+    "0"
+   ],
+   "ms_up_0": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "0",
+    "0"
+   ],
+   "ms_up_1": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "0",
+    "0"
+   ],
+   "ms_up_2": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_3": [
+    "0",
+    "0"
+   ],
+   "bound_up_3": [
+    "0",
+    "0"
+   ],
+   "ms_up_3": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_3": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_4": [
+    "0",
+    "0"
+   ],
+   "bound_up_4": [
+    "0",
+    "0"
+   ],
+   "ms_up_4": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_4": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_5": [
+    "0",
+    "0"
+   ],
+   "bound_up_5": [
+    "0",
+    "0"
+   ],
+   "ms_up_5": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_5": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_6": [
+    "0",
+    "0"
+   ],
+   "bound_up_6": [
+    "0",
+    "0"
+   ],
+   "ms_up_6": [
+    "empty",
+    "empty"
+   ],
+   "ms_lo_6": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -593,7 +1673,7 @@
   "id": "publish-subscribe/publish-subscribe.cpn",
   "status": "refused",
   "reason": "Subscription/ASG_bought_0: an arc without an inscription; CPN Tools does not compile the transition (it can never occur there) -- give the arc its inscription",
-  "seconds": 0.02247669999997015
+  "seconds": 0.0331741999998485
  },
  {
   "id": "CPNpy/dining_philosophers.cpn",
@@ -604,7 +1684,7 @@
   "timed": false,
   "places": 3,
   "transitions": 2,
-  "seconds": 0.0015437000001838896,
+  "seconds": 0.001541900000120222,
   "oracle": "rejected by CPN Tools",
   "oracle_errors": {
    "driver": "org.cpntools.accesscpn.engine.highlevel.DeclarationCheckerException: IDW2: Error. Could not parse declaration colset PH = index null with null..null;."
@@ -619,7 +1699,7 @@
   "timed": false,
   "places": 3,
   "transitions": 2,
-  "seconds": 0.0027045999995607417,
+  "seconds": 0.0024779000004855334,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -645,6 +1725,94 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "2",
+    "2"
+   ],
+   "fair_tis": [
+    "2",
+    "2"
+   ],
+   "just_tis": [
+    "2",
+    "2"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "5",
+    "5"
+   ],
+   "ms_up_0": [
+    "1`1++1`2++1`3++1`4++1`5",
+    "1`1++1`2++1`3++1`4++1`5"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "2",
+    "2"
+   ],
+   "ms_up_1": [
+    "1`4++1`5",
+    "1`4++1`5"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_2": [
+    "0",
+    "0"
+   ],
+   "bound_up_2": [
+    "3",
+    "3"
+   ],
+   "ms_up_2": [
+    "1`1++1`2++1`3",
+    "1`1++1`2++1`3"
+   ],
+   "ms_lo_2": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -658,7 +1826,7 @@
   "timed": false,
   "places": 2,
   "transitions": 1,
-  "seconds": 0.0008531999992555939,
+  "seconds": 0.001312599999437225,
   "oracle": "agree",
   "oracle_detail": {
    "nodes": [
@@ -684,6 +1852,78 @@
    "home": [
     "1",
     "1"
+   ],
+   "R1": [
+    "false",
+    "false"
+   ],
+   "R2": [
+    "true",
+    "true"
+   ],
+   "R3": [
+    "true",
+    "true"
+   ],
+   "R4": [
+    "true",
+    "true"
+   ],
+   "R5": [
+    "false",
+    "false"
+   ],
+   "dead_tis": [
+    "0",
+    "0"
+   ],
+   "live_tis": [
+    "0",
+    "0"
+   ],
+   "impartial_tis": [
+    "1",
+    "1"
+   ],
+   "fair_tis": [
+    "1",
+    "1"
+   ],
+   "just_tis": [
+    "1",
+    "1"
+   ],
+   "bound_lo_0": [
+    "0",
+    "0"
+   ],
+   "bound_up_0": [
+    "3",
+    "3"
+   ],
+   "ms_up_0": [
+    "1`red++2`green",
+    "1`red++2`green"
+   ],
+   "ms_lo_0": [
+    "empty",
+    "empty"
+   ],
+   "bound_lo_1": [
+    "0",
+    "0"
+   ],
+   "bound_up_1": [
+    "3",
+    "3"
+   ],
+   "ms_up_1": [
+    "1`red++2`green",
+    "1`red++2`green"
+   ],
+   "ms_lo_1": [
+    "empty",
+    "empty"
    ]
   },
   "oracle_errors": {}
@@ -697,7 +1937,7 @@
   "timed": true,
   "places": 2,
   "transitions": 1,
-  "seconds": 0.0012011999997412204,
+  "seconds": 0.0015892000001258566,
   "oracle": "contained",
   "oracle_detail": {
    "nodes": [
@@ -720,6 +1960,6 @@
   "id": "CPNpy/plane_boarding.cpn",
   "status": "refused",
   "reason": "myNet/Move up: time inscription '@++exponential(8.0)' is not supported (integer delays @+d only)",
-  "seconds": 0.013012299999900279
+  "seconds": 0.013090700000248034
  }
 ]

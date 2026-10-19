@@ -208,17 +208,33 @@ class StateSpaceReportProfile(Profile):
                 if ti not in enabled_somewhere]
         live = [names[ti] for ti in range(len(names))
                 if all(ti in enabled_in_scc[c] for c in ss.terminal_sccs)]
-        bounds = []
+        bounds, ms_bounds = [], []
+        sets = net.declarations.colsets
         for i, p in enumerate(net.places):
             sizes = [len(m[i]) for m in ss.markings]
             bounds.append((p["gid"], min(sizes), max(sizes)))
-        report = {"bounds": bounds, "dead_transitions": dead,
-                  "live_transitions": live}
+            upper, lower = _multiset_bounds(net, ss, i)
+            colset = sets.get(p.get("colset"))
+            ms_bounds.append((p["gid"], _ms_text(upper, colset, sets),
+                              _ms_text(lower, colset, sets)))
+        fairness, infinite = _fairness(ss, len(net.transitions))
+        report = {"bounds": bounds, "multiset_bounds": ms_bounds,
+                  "dead_transitions": dead, "live_transitions": live,
+                  "infinite_runs": infinite,
+                  "fairness": [(names[ti], kind) for ti, kind in enumerate(fairness)]}
         oracle = {"dead_tis": str(len(dead)), "live_tis": str(len(live))}
+        # As CPN Tools lists them: each list includes the stronger classes.
+        order = ("impartial", "fair", "just")
+        for level, key in enumerate(order):
+            oracle[f"{key}_tis"] = str(sum(1 for k in fairness
+                                           if k in order[:level + 1]))
         for i, (_gid, low, high) in enumerate(bounds):
             if self._unambiguous(net, i):
                 oracle[f"bound_lo_{i}"] = str(low)
                 oracle[f"bound_up_{i}"] = str(high)
+                if i not in net.timed_places:
+                    oracle[f"ms_up_{i}"] = ms_bounds[i][1]
+                    oracle[f"ms_lo_{i}"] = ms_bounds[i][2]
         return {"report": report, "oracle": oracle}
 
     # Method to tell whether a place can be named in CPN Tools' Mark structure.
@@ -251,13 +267,173 @@ class StateSpaceReportProfile(Profile):
         q = collections.OrderedDict()
         q["dead_tis"] = "Int.toString (length (ListDeadTIs ()))"
         q["live_tis"] = "Int.toString (length (ListLiveTIs ()))"
+        q["impartial_tis"] = "Int.toString (length (ListImpartialTIs ()))"
+        q["fair_tis"] = "Int.toString (length (ListFairTIs ()))"
+        q["just_tis"] = "Int.toString (length (ListJustTIs ()))"
         for i, p in enumerate(net.places):
             if not self._unambiguous(net, i):
                 continue
             mark = f"Mark.{p.get('ml') or ml_name(p['page']) + chr(39) + ml_name(p['name'])} 1"
             q[f"bound_lo_{i}"] = f"Int.toString (LowerInteger ({mark}))"
             q[f"bound_up_{i}"] = f"Int.toString (UpperInteger ({mark}))"
+            if i not in net.timed_places and p.get("colset"):
+                cs = p["colset"]
+                q[f"ms_up_{i}"] = f"{cs}.mkstr_ms (UpperMultiSet ({mark}))"
+                q[f"ms_lo_{i}"] = f"{cs}.mkstr_ms (LowerMultiSet ({mark}))"
         return q
+
+
+# Function to compute a place's multiset bounds.
+def _multiset_bounds(net, ss, pidx: int):
+    """The best upper and lower multiset bounds of a place.
+
+    For every colour, the most and the fewest tokens of it the place holds
+    in any reachable marking (timestamps aside).
+
+    Args:
+        net (ColouredNet): The net.
+        ss (StateSpace): The complete occurrence graph.
+        pidx (int): The place.
+
+    Returns:
+        tuple: ``(upper, lower)``, each ``{value: count}``.
+    """
+    upper: Dict[Any, int] = {}
+    lower: Optional[Dict[Any, int]] = None
+    for m in ss.markings:
+        counts = collections.Counter(net.values_of(pidx, m[pidx]))
+        for value, n in counts.items():
+            if n > upper.get(value, 0):
+                upper[value] = n
+        if lower is None:
+            lower = dict(counts)
+        else:
+            lower = {v: min(n, counts.get(v, 0)) for v, n in lower.items()
+                     if counts.get(v, 0)}
+    return upper, lower or {}
+
+
+# Function to write a multiset as CPN Tools does, in canonical term order.
+def _ms_text(counts: Dict[Any, int], colset, sets) -> str:
+    """``1`a++2`b`` with terms sorted, ``empty`` for none.
+
+    Args:
+        counts (dict): ``{value: count}``.
+        colset (ColourSet, optional): The place's colour set.
+        sets (dict): Every colour set.
+
+    Returns:
+        str: The canonical text (compared term by term with CPN Tools').
+    """
+    from ..colourset import mkstr
+
+    terms = sorted(f"{n}`{mkstr(v, colset, sets)}" for v, n in counts.items() if n)
+    return "++".join(terms) if terms else "empty"
+
+
+# Function to classify the transitions by fairness.
+def _fairness(ss, n_transitions: int):
+    """Impartial, fair, just or no fairness, per transition (as CPN Tools).
+
+    Without the arcs of ``t``, a non-trivial strongly connected component is
+    an infinite run avoiding ``t``. ``t`` is *impartial* when there is none,
+    *fair* when none has ``t`` enabled at one of its markings, *just* when
+    none has a cycle of markings that all enable ``t``.
+
+    Args:
+        ss (StateSpace): The complete occurrence graph.
+        n_transitions (int): How many transitions.
+
+    Returns:
+        tuple: ``(kinds, infinite)``: one of ``"impartial"``, ``"fair"``,
+        ``"just"``, ``"none"`` per transition, and whether the graph has an
+        infinite occurrence sequence at all.
+    """
+    nodes = range(ss.n_nodes)
+    enabled = [set(ti for ti, _k, _d in out) for out in ss.succ]
+    all_arcs = [[(ti, d) for ti, _k, d in out] for out in ss.succ]
+    infinite = bool(_cyclic_components(nodes, lambda v: [d for _t, d in all_arcs[v]]))
+    kinds = []
+    for t in range(n_transitions):
+        def without_t(v, t=t):
+            return [d for ti, d in all_arcs[v] if ti != t]
+        comps = _cyclic_components(nodes, without_t)
+        if not comps:
+            kinds.append("impartial")
+            continue
+        if not any(t in enabled[v] for comp in comps for v in comp):
+            kinds.append("fair")
+            continue
+        just = True
+        for comp in comps:
+            inside = [v for v in comp if t in enabled[v]]
+            keep = set(inside)
+            if _cyclic_components(inside, lambda v, keep=keep: [
+                    d for d in without_t(v) if d in keep]):
+                just = False
+                break
+        kinds.append("just" if just else "none")
+    return kinds, infinite
+
+
+# Function to find the strongly connected components that contain a cycle.
+def _cyclic_components(nodes, successors) -> List[List[int]]:
+    """Tarjan's algorithm, keeping components with a cycle.
+
+    A component has a cycle when it has more than one node, or one node
+    with an arc to itself (CPN Tools' non-trivial components).
+
+    Args:
+        nodes (iterable): The nodes to consider.
+        successors (callable): ``node -> list of nodes``.
+
+    Returns:
+        list: The non-trivial components, as node lists.
+    """
+    index: Dict[int, int] = {}
+    low: Dict[int, int] = {}
+    on_stack = set()
+    stack: List[int] = []
+    out: List[List[int]] = []
+    counter = 0
+    for root in nodes:
+        if root in index:
+            continue
+        work = [(root, iter(successors(root)))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            v, it = work[-1]
+            advanced = False
+            for w in it:
+                if w not in index:
+                    index[w] = low[w] = counter
+                    counter += 1
+                    stack.append(w)
+                    on_stack.add(w)
+                    work.append((w, iter(successors(w))))
+                    advanced = True
+                    break
+                if w in on_stack:
+                    low[v] = min(low[v], index[w])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[v])
+            if low[v] == index[v]:
+                comp = []
+                while True:
+                    w = stack.pop()
+                    on_stack.discard(w)
+                    comp.append(w)
+                    if w == v:
+                        break
+                if len(comp) > 1 or v in successors(v):
+                    out.append(comp)
+    return out
 
 
 register(StateSpaceReportProfile())

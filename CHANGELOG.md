@@ -23,7 +23,8 @@ pyruleanalyzer (see [ROADMAP.md](ROADMAP.md) for the phases).
 
 **Checking**
 * A default profile for any net: CPN Tools' state-space report (deadlock,
-  termination, home marking, dead and live transitions, place bounds).
+  termination, home marking, dead and live transitions, integer and multiset
+  place bounds, impartial/fair/just transitions).
 * User properties as text (`--prop`, `--props`): CTL over named places and
   transitions; counterexamples that replay.
 * State-space reduction: stubborn sets, generalised sweep-line, time
@@ -37,7 +38,9 @@ pyruleanalyzer (see [ROADMAP.md](ROADMAP.md) for the phases).
   state spaces, verdicts and report figures; timed nets by containment.
 * The CPN Tools samples and a corpus of 48 nets other people wrote
   (`tests/corpus`): no reader bugs; every explored net CPN Tools compiles
-  agrees with it.
+  agrees with it, on the state space and on every report figure.
+* Exploration about 40% faster on timed nets (bindings counted once per
+  marking, timestamps cached).
 
 **Packaging**
 * Python 3.8-3.13, no dependencies; CI on Linux, macOS and Windows; API

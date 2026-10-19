@@ -102,9 +102,11 @@ element or every element of that name. The full grammar is in
 [`cpncheck/query.py`](cpncheck/query.py); from Python, pass
 `properties=` to `check_cpn` or `CPNModelChecker`. Every user property on two
 CPN Tools samples is checked against CPN Tools' own ASK-CTL by the tests. Below them come the integer
-bounds of every place and the dead and live transition instances. Every figure
-is compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
-`UpperInteger`, `LowerInteger`) by the oracle tests.
+and multiset bounds of every place, the dead and live transition instances and
+the fairness of each transition (impartial, fair, just). Every figure is
+compared with CPN Tools' own functions (`ListDeadTIs`, `ListLiveTIs`,
+`UpperInteger`, `LowerInteger`, `UpperMultiSet`, `LowerMultiSet`,
+`ListImpartialTIs`, `ListFairTIs`, `ListJustTIs`) by the oracle tests.
 
 **Examples.** [examples/](examples/) is a guided tour, one feature per
 script, on small nets shipped with them: the quickstart, the layers under

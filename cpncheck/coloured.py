@@ -1038,32 +1038,70 @@ class ColouredNet:
         domains = t["domains"]
         computed = t["computed"]
         expr_arcs = t["in_expr"]
+        places_read = {p for p, _ in inputs} | {p for p, _ in expr_arcs}
         values = {pidx: self.values_of(pidx, marking[pidx])
-                  for pidx in {p for p, _ in inputs}
-                  | {p for p, _ in expr_arcs}}
+                  for pidx in places_read}
+        # Counted and sorted once per marking, not once per partial binding.
+        counts = {pidx: collections.Counter(vals) for pidx, vals in values.items()}
+        distinct = {pidx: sort_tokens(c) for pidx, c in counts.items()}
         self._now = self.clock_of(marking)
+
+        stamps_cache: Dict[int, Dict[Any, List[int]]] = {}
+
+        def stamps_of(pidx):
+            # value -> its tokens' timestamps, sorted; once per marking.
+            got = stamps_cache.get(pidx)
+            if got is None:
+                got = {}
+                for tok in marking[pidx]:
+                    got.setdefault(tok[0], []).append(tok[1])
+                for lst in got.values():
+                    lst.sort()
+                stamps_cache[pidx] = got
+            return got
+
+        def ready_time(env, used, extra):
+            # When the tokens this binding takes are all ready: the n-th
+            # earliest timestamp of every value it takes n of.
+            ready = self._now
+            for part in (used, extra):
+                for pidx, taken in part.items():
+                    if pidx not in self.timed_places or not taken:
+                        continue
+                    pre = self._preponement(t, pidx, env)
+                    by_value = stamps_of(pidx)
+                    for value, n in taken.items():
+                        if n > 0:
+                            n_all = n + (used.get(pidx, {}).get(value, 0)
+                                         if part is extra else 0)
+                            ready = max(ready, by_value[value][n_all - 1] - pre)
+            return ready
 
         def available_for_expressions(env, used):
             # The expression arcs take their multisets on top of what the
-            # pattern arcs took; each must be present in full.
-            taken: Dict[int, collections.Counter] = {
-                p: collections.Counter(c) for p, c in used.items()}
+            # pattern arcs took; each must be present in full. Returns what
+            # they take, or None when it is not there.
+            extra: Dict[int, Dict[Any, int]] = {}
             for pidx, code in expr_arcs:
                 try:
                     wanted = code(env)
                 except MLError as exc:
                     raise UnsupportedNet(f"{t['name']}: input arc: {exc}")
-                have = collections.Counter(values[pidx])
-                have.subtract(taken.get(pidx, {}))
+                have = counts[pidx]
+                took = used.get(pidx, {})
+                more = extra.setdefault(pidx, {})
                 for token, count in wanted.items():
-                    if have[token] < count:
-                        return False
-                    taken.setdefault(pidx, collections.Counter())[token] += count
-            return True
+                    if have.get(token, 0) - took.get(token, 0)                             - more.get(token, 0) < count:
+                        return None
+                    more[token] = more.get(token, 0) + count
+            return extra
 
         def accept(env, used):
-            if expr_arcs and not available_for_expressions(env, used):
-                return
+            extra = {}
+            if expr_arcs:
+                extra = available_for_expressions(env, used)
+                if extra is None:
+                    return
             if guard is not None:
                 try:
                     if not guard(env):
@@ -1076,7 +1114,7 @@ class ColouredNet:
             key = tuple(sorted(env.items()))
             if key not in seen:
                 seen.add(key)
-                ready = self._ready(marking, t, env) if self.timed else 0
+                ready = ready_time(env, used, extra) if self.timed else 0
                 results.append((env, ready))
                 if len(results) > MAX_BINDINGS:
                     raise UnsupportedNet(
@@ -1105,24 +1143,29 @@ class ColouredNet:
                 extended.update(zip(names, combination))
                 define(extended, used)
 
-        def rec(i, env, used):
-            if i == len(inputs):
+        used: Dict[int, Dict[Any, int]] = {pidx: {} for pidx in places_read}
+        fields = self.fields
+        n_inputs = len(inputs)
+
+        def rec(i, env):
+            # Tokens taken so far are counted in `used`, added and undone as
+            # the search goes down and back up.
+            if i == n_inputs:
                 complete(env, used)
                 return
             pidx, pattern = inputs[i]
-            available = collections.Counter(values[pidx])
-            available.subtract(used.get(pidx, {}))
-            for token in sort_tokens(set(values[pidx])):
-                if available[token] <= 0:
+            have, took = counts[pidx], used[pidx]
+            for token in distinct[pidx]:
+                if have[token] - took.get(token, 0) <= 0:
                     continue
-                env2 = match_pattern(pattern, token, env, self.fields)
+                env2 = match_pattern(pattern, token, env, fields)
                 if env2 is None:
                     continue
-                used2 = {k: collections.Counter(v) for k, v in used.items()}
-                used2.setdefault(pidx, collections.Counter())[token] += 1
-                rec(i + 1, env2, used2)
+                took[token] = took.get(token, 0) + 1
+                rec(i + 1, env2)
+                took[token] -= 1
 
-        rec(0, {}, {})
+        rec(0, {})
         return results
 
     # Method to follow one maximal occurrence sequence.

@@ -76,6 +76,10 @@ try {
     try { c.instantiateSMLInterface(); } catch (se) { out.log.push("no Java marking view"); }
     out.log.push("compiled");
     function ev(code) { return String(s.evaluate(code)); }
+    // Long answers must not be cut short ("..." becomes "#" past the depth).
+    ev("val _ = Control.Print.stringDepth := 1000000;");
+    ev("val _ = Control.Print.printLength := 100000;");
+    ev("val _ = Control.Print.printDepth := 1000;");
     ev("val ogpath = \"" + job.ogpath + "\";");
     for (var i = 1; i <= (job.stateSpace ? 8 : 0); i++) {
         var r = ev("use (ogpath^\"switch" + i + ".sml\");");
@@ -624,6 +628,10 @@ def compare_with_oracle(cpn_path: str, oracle: Optional[CPNToolsOracle] = None,
     for key in queries:
         mine = result.oracle.get(key)
         theirs = answer["values"].get(key)
+        if key.startswith("ms_") and theirs is not None:
+            # A multiset's terms in CPN Tools' order; compare as a bag.
+            theirs = "++".join(sorted(t.strip() for t in theirs.split("++")
+                                      if t.strip())) or "empty"
         rows.append((key, mine, theirs, mine is not None and mine == theirs))
     return {
         "net": cpn_path, "rows": rows, "agree": all(r[3] for r in rows),

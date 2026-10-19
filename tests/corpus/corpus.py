@@ -172,7 +172,7 @@ def against_cpntools(path: str, timed: bool, max_nodes: int, oracle) -> Dict[str
         and the details.
     """
     from cpncheck.coloured import CPNTOOLS_401
-    from cpncheck.oracle import compare_graph_containment, compare_state_space
+    from cpncheck.oracle import compare_graph_containment
 
     try:
         if timed:
@@ -182,8 +182,10 @@ def against_cpntools(path: str, timed: bool, max_nodes: int, oracle) -> Dict[str
                     "oracle_detail": {k: r.get(k) for k in
                                       ("nodes", "arcs", "dead", "missing_arcs")},
                     "oracle_errors": r.get("errors")}
-        r = compare_state_space(path, oracle=oracle, max_nodes=max_nodes,
-                                timeout=900)
+        # The whole report: statistics, R1-R5, place bounds, multiset
+        # bounds, dead/live and fair transitions.
+        from cpncheck.oracle import compare_with_oracle
+        r = compare_with_oracle(path, oracle=oracle, timeout=900)
         if "CheckerException" in str(r.get("errors")):
             # CPN Tools' own compiler refuses the file: nothing to compare.
             return {"oracle": "rejected by CPN Tools",

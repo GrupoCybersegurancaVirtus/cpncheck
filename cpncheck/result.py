@@ -314,12 +314,29 @@ class ModelCheckResult:
                 lines.append(f"  {gid[:56]:<56}{low:>8}{high:>8}")
             if len(bounds) > limit:
                 lines.append(f"  ... {len(bounds) - limit} more places")
+        ms_bounds = rep.get("multiset_bounds", [])
+        if ms_bounds:
+            lines.append("  multiset bounds (upper / lower):")
+            for gid, up, lo in ms_bounds[:limit]:
+                lines.append(f"    {gid[:40]:<40} {up[:60]}")
+                lines.append(f"    {'':<40} {lo[:60]}")
         for key, title in (("dead_transitions", "dead transitions"),
                            ("live_transitions", "live transitions")):
             names = rep.get(key, [])
             shown = ", ".join(names[:limit]) if names else "none"
             more = f" ... {len(names) - limit} more" if len(names) > limit else ""
             lines.append(f"  {title} ({len(names)}): {shown}{more}")
+        if "fairness" in rep:
+            if not rep.get("infinite_runs"):
+                lines.append("  fairness: no infinite occurrence sequences")
+            else:
+                for kind, title in (("impartial", "impartial transitions"),
+                                    ("fair", "fair transitions"),
+                                    ("just", "just transitions"),
+                                    ("none", "transitions with no fairness")):
+                    names = [n for n, k in rep["fairness"] if k == kind]
+                    shown = ", ".join(names[:limit]) if names else "none"
+                    lines.append(f"  {title} ({len(names)}): {shown}")
         return lines
 
     # Method to escape a formula for a LaTeX texttt cell.
