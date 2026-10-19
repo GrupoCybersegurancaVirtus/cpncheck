@@ -41,7 +41,7 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .colourset import Declarations
-from .cpnml import (ConValue, Delayed, IndexValue, MLError, MultiSet, Parser,
+from .cpnml import (ConValue, Delayed, EnumValue, IndexValue, MLError, MultiSet, Parser,
                     Stamped, sort_tokens,
                     _delay,
                     TimedToken, compile_expression, free_variables,
@@ -60,6 +60,11 @@ class UnsupportedNet(Exception):
     """The net uses a construct the state-space generator does not implement."""
 
 
+#: Value types that are canonical as they are.
+_CANONICAL = frozenset({int, float, str, bool, type(None), EnumValue,
+                        IndexValue, TimedToken, Delayed, Stamped})
+
+
 # Function to put a token value in canonical, hashable form.
 def _canon(value):
     """Convert lists to tuples recursively so tokens are hashable and ordered.
@@ -70,6 +75,18 @@ def _canon(value):
     Returns:
         The canonical value.
     """
+    kind = type(value)
+    if kind in _CANONICAL:
+        return value
+    if kind is tuple:
+        # Already canonical, the usual case: keep the object, build nothing.
+        for v in value:
+            if type(v) not in _CANONICAL:
+                break
+        else:
+            return value
+        parts = tuple(_canon(v) for v in value)
+        return value if all(a is b for a, b in zip(parts, value)) else parts
     if isinstance(value, (IndexValue, TimedToken, Delayed, Stamped)):
         return value
     if isinstance(value, ConValue):
@@ -249,6 +266,36 @@ class ColouredNet:
         env (dict): Names every expression can use.
         initial (tuple): The initial marking.
     """
+
+    # Method to build a place's memoised type test.
+    def _type_test(self, colset: Optional[str]):
+        """``value -> bool``: whether a value has the colour set's type.
+
+        The same tokens are produced again and again, so the answers are
+        kept per colour set. A net CPN Tools compiles is well typed, so the
+        values reaching one colour set never differ only as ``1`` and
+        ``True`` do, and the value alone is a sound key.
+
+        Args:
+            colset (str, optional): The colour set's name.
+
+        Returns:
+            callable: The test.
+        """
+        cache = self._type_caches.setdefault(colset, {})
+        admits = self.declarations.admits
+
+        def test(value):
+            try:
+                return cache[value]
+            except KeyError:
+                if len(cache) > 200000:
+                    cache.clear()
+                answer = cache[value] = admits(value, colset)
+                return answer
+            except TypeError:                   # unhashable: not a token
+                return admits(value, colset)
+        return test
 
     # Method to flatten and compile a parsed net.
     def __init__(self, net: CPNNet, prelude: Optional[Dict[str, Any]] = None,
@@ -1450,9 +1497,8 @@ class ColouredNet:
                              if self._is_timed_colset(p.get("colset"))}
         self.timed = bool(self.timed_places)
         #: Per place, the test telling one of its tokens from a list of them.
-        self._admits = [
-            (lambda v, c=p.get("colset"): self.declarations.admits(v, c))
-            for p in self.places]
+        self._type_caches: Dict[Optional[str], Dict[Any, bool]] = {}
+        self._admits = [self._type_test(p.get("colset")) for p in self.places]
         for t in trans:
             self._compile_transition(t, index)
             self.transitions.append(t)
