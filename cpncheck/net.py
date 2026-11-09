@@ -12,15 +12,40 @@ occurrence graph). What a particular family of nets means is a profile's
 business; see :mod:`cpncheck.profile`.
 """
 
+import contextlib
+import gc
 import re
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional
 
-__all__ = ["CPNNet"]
+__all__ = ["CPNNet", "paused_gc"]
 
 # ---------------------------------------------------------------------------
 # .cpn parsing
 # ---------------------------------------------------------------------------
+
+# Context manager pausing the cyclic garbage collector.
+@contextlib.contextmanager
+def paused_gc():
+    """Run a block with the cyclic garbage collector off, then restore it.
+
+    Reading and compiling a large net allocates millions of small objects and
+    frees almost none, which makes the collector run full passes over an ever
+    larger heap: on a net of 33 000 transitions they took two thirds of the
+    load. Nothing read here forms reference cycles that must be reclaimed
+    meanwhile, so the collector is paused for the duration and left as it was.
+
+    Yields:
+        None
+    """
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
 
 # Class holding the parsed contents of a .cpn file.
 class CPNNet:
@@ -29,6 +54,16 @@ class CPNNet:
     # Method to parse a .cpn file into pages of places, transitions and arcs.
     def __init__(self, path):
         """Parse a ``.cpn`` file.
+
+        Args:
+            path (str): Path to the exported ``.cpn``.
+        """
+        with paused_gc():
+            self._read(path)
+
+    # Method to read the pages of the file (see __init__).
+    def _read(self, path):
+        """Fill the pages, places, transitions and arcs from ``path``.
 
         Args:
             path (str): Path to the exported ``.cpn``.

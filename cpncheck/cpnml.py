@@ -145,10 +145,92 @@ def _unescape(body: str) -> str:
 
 _SPACE = re.compile(r"\s+")
 
+# Every token class in one pattern, tried in the order of `_tokenize_slow`:
+# space, a comment opener, character, string, real, integer, identifier, then
+# the operators longest first. A regex alternation takes the first alternative
+# that matches, as the sequence of tests does, so the tokens are the same.
+_TOKEN = re.compile("|".join([
+    r"(?P<space>\s+)",
+    r"(?P<comment>\(\*)",
+    r'(?P<char>#"(?:[^"\\]|\\.)+")',
+    r'(?P<string>"(?:[^"\\]|\\.)*")',
+    r"(?P<real>~?\d+\.\d*(?:[eE]~?[-+]?\d+)?|~?\d+[eE]~?[-+]?\d+)",
+    r"(?P<int>~?\d+)",
+    r"(?P<ident>[A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_']*)*)",
+    "(?P<op>" + "|".join(re.escape(op) for op in OPERATORS) + ")",
+]))
+
+#: Tokens of recently seen sources. A net and its variants (mutants, the
+#: initial and refined model) repeat most inscriptions, so their tokens are
+#: read once. Bounded; entries are immutable tuples, handed out as new lists.
+_TOKEN_CACHE: Dict[str, Tuple[Tuple[str, Any, int], ...]] = {}
+_TOKEN_CACHE_MAX = 400_000
+
 
 # Function to split CPN ML source into tokens.
 def tokenize(text: str) -> List[Tuple[str, Any, int]]:
     """Turn source into ``(kind, value, position)`` tokens.
+
+    Args:
+        text (str): CPN ML source.
+
+    Returns:
+        list: The tokens, ending with an ``end`` token.
+
+    Raises:
+        MLError: On a character that cannot start a token.
+    """
+    cached = _TOKEN_CACHE.get(text)
+    if cached is not None:
+        return list(cached)
+    out: List[Tuple[str, Any, int]] = []
+    i, n = 0, len(text)
+    match = _TOKEN.match
+    while i < n:
+        m = match(text, i)
+        if m is None:
+            raise MLError(f"unexpected character {text[i]!r} at {i}")
+        kind = m.lastgroup
+        if kind == "space":
+            i = m.end()
+            continue
+        if kind == "comment":                           # nested ML comments
+            depth, i = 1, i + 2
+            while i < n and depth:
+                if text.startswith("(*", i):
+                    depth, i = depth + 1, i + 2
+                elif text.startswith("*)", i):
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+            continue
+        word = m.group()
+        if kind == "char":
+            out.append(("str", _unescape(word[2:-1]), i))
+        elif kind == "string":
+            out.append(("str", _unescape(word[1:-1]), i))
+        elif kind == "real":
+            out.append(("real", float(word.replace("~", "-")), i))
+        elif kind == "int":
+            out.append(("int", int(word.replace("~", "-")), i))
+        elif kind == "ident":
+            if word == "_":                              # the wildcard pattern
+                out.append(("op", "_", i))
+            else:
+                out.append((("kw" if word in KEYWORDS else "id"), word, i))
+        else:
+            out.append(("op", word, i))
+        i = m.end()
+    out.append(("end", None, n))
+    if len(_TOKEN_CACHE) >= _TOKEN_CACHE_MAX:
+        _TOKEN_CACHE.clear()
+    _TOKEN_CACHE[text] = tuple(out)
+    return out
+
+
+# Function to split CPN ML source into tokens, one test after another.
+def _tokenize_slow(text: str) -> List[Tuple[str, Any, int]]:
+    """The reference lexer that `tokenize` agrees with (kept for the tests).
 
     Args:
         text (str): CPN ML source.
@@ -807,13 +889,57 @@ def parse_expression(text: str, symbols=None):
 
     Raises:
         MLError: On a syntax error or trailing input.
+
+    Trees are kept per (source, declared symbols), so a net read again, or a
+    variant of it, parses each repeated inscription once. Trees are never
+    modified after parsing, so one tree can serve every net that asks.
     """
+    key = (text, _symbols_key(symbols))
+    tree = _TREE_CACHE.get(key)
+    if tree is not None:
+        return tree
     parser = Parser(tokenize(text), text, symbols)
     tree = parser.expression()
     if parser.peek()[0] != "end":
         raise MLError(f"unexpected {parser.peek()[1]!r} after an expression "
                       f"in {text.strip()!r}")
+    if len(_TREE_CACHE) >= _TOKEN_CACHE_MAX:
+        _TREE_CACHE.clear()
+    _TREE_CACHE[key] = tree
     return tree
+
+
+#: Expression trees by (source, symbols key); see `parse_expression`.
+_TREE_CACHE: Dict[Tuple[str, Any], Any] = {}
+#: id(symbols dict) -> (the dict, its size, its key), so the key of a net's
+#: symbols is computed once, not once per inscription.
+_SYMBOLS_KEYS: Dict[int, Tuple[Any, int, Any]] = {}
+
+
+# Function to identify a symbols table by its content.
+def _symbols_key(symbols):
+    """A hashable summary of the constants and constructors a parse sees.
+
+    Two tables with the same names bound to the same kinds of symbol with the
+    same printed values parse every source alike.
+
+    Args:
+        symbols (dict, optional): Declared constants and constructors.
+
+    Returns:
+        tuple: The key (empty for no symbols).
+    """
+    if not symbols:
+        return ()
+    hit = _SYMBOLS_KEYS.get(id(symbols))
+    if hit is not None and hit[0] is symbols and hit[1] == len(symbols):
+        return hit[2]
+    key = tuple(sorted((name, type(value).__name__, repr(value))
+                       for name, value in symbols.items()))
+    if len(_SYMBOLS_KEYS) > 1024:
+        _SYMBOLS_KEYS.clear()
+    _SYMBOLS_KEYS[id(symbols)] = (symbols, len(symbols), key)
+    return key
 
 
 # Function to parse one pattern.

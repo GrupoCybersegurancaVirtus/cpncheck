@@ -47,7 +47,7 @@ from .cpnml import (ConValue, Delayed, EnumValue, IndexValue, MLError, MultiSet,
                     TimedToken, compile_expression, free_variables,
                     match_pattern, parse_expression, parse_multiset,
                     pattern_variables, tokenize)
-from .net import CPNNet
+from .net import CPNNet, paused_gc
 
 __all__ = ["UnsupportedNet", "ColouredNet"]
 
@@ -321,7 +321,8 @@ class ColouredNet:
             raise ValueError(f"unknown compat mode {compat!r}")
         self.compat = compat
         self.net = net
-        self.declarations = Declarations(net.path, prelude)
+        with paused_gc():
+            self.declarations = Declarations(net.path, prelude)
         self.env = self.declarations.globals
         self.fields = self.declarations.fields
         self.symbols = self.declarations.symbols
@@ -334,7 +335,8 @@ class ColouredNet:
         self.port_of: Dict[Tuple[str, str], int] = {}
         #: How many times each page is instantiated.
         self.page_instances: Dict[str, int] = collections.Counter()
-        self._flatten()
+        with paused_gc():   # compiling every inscription allocates millions of objects
+            self._flatten()
         self.index = {p["gid"]: i for i, p in enumerate(self.places)}
         self.consumers: Dict[int, List[int]] = collections.defaultdict(list)
         for ti, t in enumerate(self.transitions):

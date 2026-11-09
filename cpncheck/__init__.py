@@ -41,7 +41,7 @@ from .properties import METHODS, Property, catalog
 from .result import ModelCheckResult, PropertyResult, compare_results
 from .statespace import DEFAULT_MAX_NODES, StateSpace, build_state_space
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "CPNModelChecker",

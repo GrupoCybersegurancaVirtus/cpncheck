@@ -40,7 +40,7 @@ from .counterexample import Counterexample
 from .ctl import _af, _eu, _eu_witness
 from .askctl import MLProgram
 from .formula import Context
-from .net import CPNNet
+from .net import CPNNet, paused_gc
 from .profile import Profile, detect
 from .properties import Property
 from .reduction import Dependency, ReducedChecker
@@ -106,6 +106,14 @@ class CPNModelChecker:
             QueryError: When a user property does not parse, names something
                 the net does not have, or reuses a profile property's id.
         """
+        # Reading, compiling and resolving the profile allocate millions of
+        # objects; the collector would make full passes over them all along.
+        with paused_gc():
+            self._load(path, max_nodes, profile, prelude, properties, options, askctl)
+
+    # Method doing the work of __init__, with the collector paused.
+    def _load(self, path, max_nodes, profile, prelude, properties, options, askctl):
+        """See :meth:`__init__`."""
         self.path = path
         self.net = CPNNet(path)
         self.cnet = ColouredNet(self.net, prelude=prelude)

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.2
+
+**Performance**
+* Loading a large net is about five times faster (a net of 33 000
+  transitions: 67 s to 13 s):
+  * the lexer matches one combined pattern per token instead of trying each
+    token class in turn, with the same tokens (checked against the previous
+    lexer on every inscription of the test nets, on a 33 000-transition net
+    and on random sources);
+  * tokens and expression trees are kept per source text (and, for trees,
+    per declared symbols), so a net read again, or one of its variants such
+    as the mutants of a fault-injection run, parses each repeated inscription
+    once;
+  * the cyclic garbage collector is paused while a net is read and compiled
+    (`cpncheck.net.paused_gc`), which otherwise spent two thirds of the load
+    in full passes over the growing heap.
+
 ## 0.2.1
 
 * The report of a combined reduction no longer fails: `cpncheck check
